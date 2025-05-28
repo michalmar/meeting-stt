@@ -26,7 +26,7 @@ git clone https://github.com/...
 ```bash
 azd auth login
 ```
-> You need to choose your preferred region (you can start with east us or sweden central or any other available region)
+> You need to choose your preferred region (you can start with `westeurope`)
 
 ## 3. Deploy Azure Resources and the app
 
