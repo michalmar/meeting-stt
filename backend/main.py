@@ -130,12 +130,12 @@ async def submit_transcription(
     combine: str = Form(...),
     user_id: str = Form(None),
     session_id: str = Form(None),
-    
+    model: str = Form(None),  # <-- added model parameter
 ):
     logger = logging.getLogger("submit_transcription")
     logger.setLevel(logging.INFO)
     logger.info(f"Received file: {file.filename}")
-    logger.info(f"Temperature: {temperature}, Diarization: {diarization}, Language: {language}, Combine: {combine}, User ID: {user_id}, Session ID: {session_id}")
+    logger.info(f"Temperature: {temperature}, Diarization: {diarization}, Language: {language}, Combine: {combine}, User ID: {user_id}, Session ID: {session_id}, Model: {model}")
     # logger.info(f"Channels: {channels}, Bits/Sample: {bits_per_sample}, Sample Rate: {samples_per_second}")
 
     try:
@@ -195,7 +195,17 @@ async def submit_transcription(
 
             # Run transcription in a thread to avoid blocking
             import threading
-            t = threading.Thread(target=factory.conversation_transcription, kwargs={"callback": callback})
+            if model == "llm":
+                logger.info("Starting LLM transcription.")
+                t = threading.Thread(target=factory.conversation_transcription_llm, kwargs={"callback": callback})
+            elif model == "msft":
+                logger.info("Starting MSFT transcription.")
+                t = threading.Thread(target=factory.conversation_transcription, kwargs={"callback": callback})
+            else:
+                logger.error(f"Invalid model specified: {model}")
+                raise HTTPException(status_code=400, detail="Invalid model specified. Use 'llm' or 'asr'.")
+            # t = threading.Thread(target=factory.conversation_transcription, kwargs={"callback": callback})
+            # t = threading.Thread(target=factory.conversation_transcription_llm, kwargs={"callback": callback})
             t.start()
 
             while True:

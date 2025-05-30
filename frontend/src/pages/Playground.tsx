@@ -126,6 +126,8 @@ export default function App() {
   const [allResults, setAllResults] = useState<any[]>([]); // <-- new state for all results
   const [groupedResults, setGroupedResults] = useState<Record<string, any[]>>({}); // <-- new state for grouped results
   const [language, setLanguage] = useState<string>('cs-CZ'); // new state for language
+  // Add model selection state
+  const [model, setModel] = useState<string>('msft');
 
   // Add new state for grouped speakers by filename
   const [groupedSpeakers, setGroupedSpeakers] = useState<Record<string, { speaker_id: string; speaker_name: string }[]>>({});
@@ -257,6 +259,7 @@ export default function App() {
         formData.append('diarization', diarization ? 'true' : 'false');
         formData.append('combine', combine ? 'true' : 'false');
         formData.append('language', language); // add language to form data
+        formData.append('model', model); // add model selection
 
         const response = await fetch(`${BASE_URL}/submit`, {
           method: 'POST',
@@ -606,6 +609,19 @@ export default function App() {
                             <SelectItem value="de-DE">German (de-DE)</SelectItem>
                             <SelectItem value="uk-UA">Ukrainian (uk-UA)</SelectItem>
                             <SelectItem value="ru-RU">Russian (ru-RU)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {/* Model selection */}
+                      <div>
+                        <Label htmlFor="model" className="mb-2 block">Model selection:</Label>
+                        <Select value={model} onValueChange={setModel}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select model" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="msft">Microsoft</SelectItem>
+                            <SelectItem value="llm">LLM</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>

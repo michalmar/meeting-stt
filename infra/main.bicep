@@ -154,6 +154,8 @@ module backend './app/backend.bicep' = {
     speechServiceName: '${abbrs.cognitiveServicesAccounts}speech-${resourceToken}'
     azureOpenaiResourceName: '${abbrs.cognitiveServicesAccounts}openai-${resourceToken}'
     azureOpenaiDeploymentName: 'gpt-4o'
+    azureOpenaiTranscribeResourceName: '${abbrs.cognitiveServicesAccounts}transcribe-${resourceToken}'
+    azureOpenaiTranscribeDeploymentName: 'gpt-4o-transcribe'
   }
   scope: rg
   dependsOn: [
@@ -192,3 +194,6 @@ output AZURE_SPEECH_REGION string = backend.outputs.speechServiceRegion
 output AZURE_SPEECH_KEY string = backend.outputs.speechServiceKey
 
 output MODEL_NAME string = backend.outputs.azureOpenaiDeploymentName
+output AZURE_OPENAI_ENDPOINT_TRANSCRIBE string = backend.outputs.azureOpenaiTranscribeEndpoint
+output AZURE_OPENAI_DEPLOYMENT_NAME_TRANSCRIBE string = backend.outputs.azureOpenaiTranscribeDeploymentName
+

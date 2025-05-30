@@ -12,6 +12,10 @@ param azureOpenaiResourceName string = 'dreamv2'
 param azureOpenaiDeploymentName string = 'gpt-4o'
 param azureOpenaiDeploymentNameMini string = 'gpt-4o-mini'
 param azureOpenaiDeploymentNameEmbedding string = 'text-embedding-3-large'
+@description('Name of the additional OpenAI resource for transcription')
+param azureOpenaiTranscribeResourceName string = 'transcribeopenai'
+@description('Deployment name for the transcription model')
+param azureOpenaiTranscribeDeploymentName string = 'gpt-4o-transcribe'
 
 @description('Custom subdomain name for the OpenAI resource (must be unique in the region)')
 param customSubDomainName string
@@ -83,6 +87,7 @@ module fetchLatestImage '../modules/fetch-container-image.bicep' = {
 }
 
 // Create Storage Account with private endpoint in the default subnet
+
 resource storageAcct 'Microsoft.Storage/storageAccounts@2021-09-01' = {
   name: storageName
   location: location
@@ -92,6 +97,15 @@ resource storageAcct 'Microsoft.Storage/storageAccounts@2021-09-01' = {
   kind: 'StorageV2'
   properties: {
     accessTier: 'Hot'
+  }
+}
+
+// Create a blob container named "data" in the storage account
+resource dataContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2021-09-01' = {
+  name: '${storageAcct.name}/default/data'
+  dependsOn: [storageAcct]
+  properties: {
+    publicAccess: 'None'
   }
 }
 
@@ -149,6 +163,27 @@ resource peOpenai 'Microsoft.Network/privateEndpoints@2021-05-01' = {
         name: 'openaiLink'
         properties: {
           privateLinkServiceId: openai.id
+          groupIds: [
+            'account'
+          ]
+        }
+      }
+    ]
+  }
+}
+// Private endpoint for the additional OpenAI (transcribe) resource in swedencentral
+resource peOpenaiTranscribe 'Microsoft.Network/privateEndpoints@2021-05-01' = {
+  name: 'pe-openai-transcribe-${uniqueString(azureOpenaiTranscribeResourceName, 'swedencentral')}'
+  location: location
+  properties: {
+    subnet: {
+      id: defaultSubnetId
+    }
+    privateLinkServiceConnections: [
+      {
+        name: 'openaiLink'
+        properties: {
+          privateLinkServiceId: openaiTranscribe.id
           groupIds: [
             'account'
           ]
@@ -242,6 +277,15 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
               name: 'MODEL_NAME'
               value: azureOpenaiDeploymentName
             }
+            {
+              name: 'AZURE_OPENAI_ENDPOINT_TRANSCRIBE'
+              value: openaiTranscribe.properties.endpoint
+            }
+            {
+              name: 'AZURE_OPENAI_DEPLOYMENT_NAME_TRANSCRIBE'
+              value: azureOpenaiTranscribeDeploymentName
+            }
+            
           ],
           env,
           map(secrets, secret => {
@@ -297,6 +341,7 @@ resource openaideployment 'Microsoft.CognitiveServices/accounts/deployments@2024
   }
 }
 
+
 resource userOpenaiRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(openai.id, userPrincipalId, 'Cognitive Services OpenAI User')
   scope: openai
@@ -316,6 +361,56 @@ resource appOpenaiRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-0
   }
 }
 
+resource openaiTranscribe 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
+  name: azureOpenaiTranscribeResourceName
+  location: 'swedencentral'
+  sku: {
+    name: 'S0'
+  }
+  kind: 'OpenAI'
+  properties: {
+    customSubDomainName: azureOpenaiTranscribeResourceName
+  }
+}
+
+resource openaiTranscribeDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
+  name: azureOpenaiTranscribeDeploymentName
+  parent: openaiTranscribe
+  sku: {
+    name: 'GlobalStandard'
+    capacity: 250
+  }
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: 'gpt-4o-audio-preview'
+      version: '2024-12-17'
+    }
+    versionUpgradeOption: 'OnceCurrentVersionExpired'
+  }
+}
+
+// Grant Cognitive Services User role to user for the transcribe OpenAI resource
+resource userOpenaiTranscribeRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(openaiTranscribe.id, userPrincipalId, 'Cognitive Services OpenAI User')
+  scope: openaiTranscribe
+  properties: {
+    principalId: userPrincipalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  }
+}
+
+// Grant Cognitive Services User role to app managed identity for the transcribe OpenAI resource
+resource appOpenaiTranscribeRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(openaiTranscribe.id, identity.id, 'Cognitive Services OpenAI User')
+  scope: openaiTranscribe
+  properties: {
+    principalId: identity.properties.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  }
+}
+
 resource speech 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
   name: speechServiceName
   location: location
@@ -326,6 +421,9 @@ resource speech 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
   properties: {
     customSubDomainName: speechServiceName
     // Add any required properties here
+  }
+  identity: {
+    type: 'SystemAssigned'
   }
 }
 
@@ -350,6 +448,26 @@ resource appSpeechRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-0
   }
 }
 
+resource storageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAcct.id, identity.id, 'Storage Blob Data Contributor')
+  scope: storageAcct
+  properties: {
+    principalId: speech.identity.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+  }
+}
+
+resource userStorageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAcct.id, userPrincipalId, 'Storage Blob Data Contributor')
+  scope: storageAcct
+  properties: {
+    principalId: userPrincipalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+  }
+}
+
+
 output defaultDomain string = containerAppsEnvironment.properties.defaultDomain
 output name string = app.name
 output uri string = 'https://${app.properties.configuration.ingress.fqdn}'
@@ -363,3 +481,6 @@ output speechServiceRegion string = speech.location
 #disable-next-line outputs-should-not-contain-secrets
 output speechServiceKey string = speech.listKeys().key1
 output azureOpenaiDeploymentName string = openaideployment.name
+
+output azureOpenaiTranscribeDeploymentName string = openaiTranscribeDeployment.name
+output azureOpenaiTranscribeEndpoint string = openaiTranscribe.properties.endpoint

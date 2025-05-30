@@ -18,6 +18,8 @@ from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from dotenv import load_dotenv
 load_dotenv(override=True)
 
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
 # Set up the subscription info for the Speech Service:
 # Replace with your own subscription key and endpoint.
 # See the limitations in supported regions,
@@ -67,31 +69,46 @@ class TranscriptionFactory:
         import time
         import logging
 
+        logger = logging.getLogger(__name__)
+        logger.info("Starting batch transcription with provided parameters or environment variables.")
+
         # Use instance or environment variables for key/endpoint
         subscription_key = self.speech_key
         endpoint = self.speech_endpoint
         region = self.speech_region
        
 
-        api_base = f"https://{region}.api.cognitive.microsoft.com/speechtotext/v3.2"
-        transcription_url = f"{api_base}/transcriptions"
+        api_base = endpoint
+        transcription_url = f"{api_base}speechtotext/v3.2/transcriptions"
+        logger.info(f"Transcription API URL: {transcription_url}")  
 
         # Prepare request body
         locale = locale or self.language or "en-US"
+        logging.info(f"Using locale: {locale}")
         candidate_locales = candidate_locales or [locale]
+        logging.info(f"Using candidate locales: {candidate_locales}")
         body = {
             "contentUrls": contentUrls,
             "locale": locale,
             "displayName": display_name,
-            "model": None,
+            # "model": None,
+            # "model": { # 20241218
+            #     "self": f"{api_base}speechtotext/v3.2/models/base/06fbc28e-1f76-4d3e-8ea1-40b8e873929e"
+            # },
+            "model": { # Whisper V2
+                "self": f"{api_base}speechtotext/v3.2/models/base/69adf293-9664-4040-932b-02ed16332e00"
+            },
+            # "model": { # Whisper V2
+            #     "self": "69adf293-9664-4040-932b-02ed16332e00"
+            # },
+            
             "properties": {
-                "wordLevelTimestampsEnabled": True,
+                "wordLevelTimestampsEnabled": False,
+                "displayFormWordLevelTimestampsEnabled": True,
                 "diarizationEnabled": True,
-                
-                # "languageIdentification": {
-                #     "candidateLocales": candidate_locales
-                # }
-            }
+                "punctuationMode": "DictatedAndAutomatic",
+                "profanityFilterMode": "Masked"
+            },
         }
 
         headers = {
@@ -131,7 +148,7 @@ class TranscriptionFactory:
                 status_json = status_resp.json()
                 status = status_json.get('status')
                 if callback:
-                    callback({"event_type": "status", "status": status, "details": status_json})
+                    callback({"event_type": "status", "status": status, "details": status_json, "duration": waited})
                 if status in ("Succeeded", "Failed", "Canceled"):
                     break
             except Exception as e:
@@ -164,7 +181,7 @@ class TranscriptionFactory:
                     results.append(result_json)
                     transcription_object = {
                         "event_type": "transcribed_batch",
-                        "file": file_info,
+                        "filename": file_info,
                         "session": None,
                         "duration": result_json.get('durationMilliseconds'),
                         "combinedRecognizedPhrases": result_json.get('combinedRecognizedPhrases', []),
@@ -183,6 +200,7 @@ class TranscriptionFactory:
                             
                             "text": phrase.get("nBest")[0].get("display"),
                             "confidence": phrase.get("nBest")[0].get("confidence"),
+                            "filename": file_info.get("name"),
                             # "speaker_id": evt.result.speaker_id,
                             
                         }
@@ -417,6 +435,105 @@ class TranscriptionFactory:
 
 
 
+    def conversation_transcription_llm(self, callback=None):
+        """
+        Transcribes a conversation using an LLM-based API (e.g., OpenAI Whisper/gpt-4o-transcribe),
+        outputs results similar to conversation_transcription, and supports an optional callback(event_dict).
+        """
+        logger = logging.getLogger(__name__)
+        logger.info("Starting LLM-based conversation transcription.")
+        import base64
+        from openai import AzureOpenAI
+        api_key = os.getenv("AZURE_OPENAI_KEY_TRANSCRIBE")
+        api_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT_TRANSCRIBE")
+
+        # Initialize Azure OpenAI client with Entra ID authentication
+        token_provider = get_bearer_token_provider(
+            DefaultAzureCredential(),
+            "https://cognitiveservices.azure.com/.default"
+        )
+
+        client = AzureOpenAI(
+            azure_endpoint=api_endpoint,
+            azure_ad_token_provider=token_provider,
+            api_version="2025-01-01-preview",
+        )
+        logger.info("Initiated LLM client.")
+        encoded_image = base64.b64encode(open(self.conversationfilename, 'rb').read()).decode('ascii')
+        chat_prompt = [
+            {
+                "role": "system",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "You are an AI assistant that helps people find information."
+                    }
+                ]
+            },
+            {
+                "role": "user",
+                "content": [
+                     {
+                        "type": "text",
+                        "text": f"""Transcribe the following conversation in {self.language} in attached file. Output format:
+                        #Speaker-1:# text
+                        #Speaker-2:# text
+                        #Speaker-3:# text
+                        etc.
+                        """
+                    },
+                    {
+                        "type": "input_audio",
+                        "input_audio": {
+                            "data": encoded_image,
+                            "format": "wav"
+                        }
+                    }
+                ]
+            }
+        ]
+        messages = chat_prompt
+
+        logger.info("Sending for transcription.")
+        completion = client.chat.completions.create(
+            model="gpt-4o-audio-preview",
+            messages=messages,
+            max_tokens=5000,
+            temperature=0.2,
+            top_p=1,
+            frequency_penalty=0,
+            presence_penalty=0,
+            stop=None,
+            stream=False
+        )
+        logger.info("Transcribed.")
+
+        logger.info(f"Transcription result: {completion.choices[0].message.content}")
+
+        transcription_text = completion.choices[0].message.content
+        
+        # Parse speaker lines and emit as individual transcription_object events
+        import re
+        speaker_line_pattern = re.compile(r"^#(Speaker-\d+):#\s*(.*)$", re.MULTILINE)
+        matches = speaker_line_pattern.findall(transcription_text)
+        for speaker_id, text in matches:
+            transcription_object = {
+                "event_type": "transcribed",
+                "session": None,
+                "offset": None,
+                "duration": None,
+                "text": text,
+                "speaker_id": speaker_id,
+                "result_id": None,
+                "filename": self.conversationfilename,
+            }
+            if callback:
+                callback(transcription_object)
+
+        logger.info("Finished.")
+        if callback:
+            callback({"event_type":"session_stopped", "filename":self.conversationfilename})
+
 
 def cback(event_dict):
     """callback function to handle events"""
@@ -428,7 +545,17 @@ if __name__ == "__main__":
     factory = TranscriptionFactory()
     # factory.conversation_transcription(cback)
     # conversation_transcription_from_microphone()
-    factory.conversation_transcription_batch(
-        contentUrls=["https://storageaimma.blob.core.windows.net/army-stt-input/upload_VO50_20s.wav"],
-        callback=cback,
-    )
+    
+    
+    # # BATCH
+    # factory.conversation_transcription_batch(
+    #     contentUrls=["https://storageaimma.blob.core.windows.net/army-stt-input/upload_VO50_20s.wav"],
+    #     callback=cback,
+    # )
+    
+    # backend/data/KREDO - Sample conversation - Ukrainian.mp3
+    # backend/data/test-transcription-cz.wav
+    
+    # LLM
+    factory.conversationfilename = "../data/test-transcription-cz.wav"
+    factory.conversation_transcription_llm(cback)
