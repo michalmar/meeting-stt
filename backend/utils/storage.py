@@ -12,6 +12,24 @@ logging.getLogger("requests").setLevel(logging.WARNING)
 logging.getLogger("azure.core").setLevel(logging.WARNING)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 class StorageFactory:
+    def list_blobs(self, prefix=None):
+        """
+        Lists all blobs in the container, optionally filtered by prefix.
+        Args:
+            prefix (str, optional): Filter blobs whose names begin with the prefix.
+        Returns:
+            list: List of blob names in the container.
+        """
+        logger = logging.getLogger(__name__)
+        try:
+            logger.info(f"Listing blobs in container '{self.container_name}' with prefix '{prefix}'.")
+            blob_list = self.container_client.list_blobs(name_starts_with=prefix)
+            blobs = [blob.name for blob in blob_list]
+            logger.info(f"Found {len(blobs)} blobs.")
+            return blobs
+        except Exception as e:
+            logger.error(f"Failed to list blobs: {e}")
+            return []
     def __init__(self, account_url=None, container_name=None):
         """
         Initializes the StorageFactory with Entra ID authentication (DefaultAzureCredential).
@@ -71,5 +89,7 @@ class StorageFactory:
 # Example usage:
 if __name__ == "__main__":
     storage = StorageFactory()
-    storage.upload_file("../data/VO50_20s.MP3")
+    # storage.upload_file("../data/VO50_20s.MP3")
     # storage.download_file("blobname.txt", "downloaded.txt")
+    blobs = storage.list_blobs(prefix="")
+    print(blobs)

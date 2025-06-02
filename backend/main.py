@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI, Depends, UploadFile, HTTPException, Query, File, Form, Body
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,7 +22,15 @@ import time
 from utils.audio import inspect_wav, inspect_audio, convert_mp3_to_wav, inspect_mp3
 from utils.transcription import TranscriptionFactory
 from utils.analyze import AnalysisFactory
+from utils.storage import StorageFactory
 # from api_key_auth import ensure_valid_api_key
+
+# API to upload files from blob storage by blob names
+from pydantic import BaseModel
+from fastapi import Body
+
+class BlobNamesRequest(BaseModel):
+    files: list[str]
 
 session_data = {}
 
@@ -63,6 +72,70 @@ async def health_check():
     logger.info("Health check endpoint called")
     # print("Health check endpoint called")
     return {"status": "healthy"}
+
+# API to list blobs in storage for frontend selection
+@app.get("/loadfiles")
+async def load_files():
+    logger = logging.getLogger("load_files")
+    logger.setLevel(logging.INFO)
+    try:
+        storage = StorageFactory()
+        blobs = storage.list_blobs()
+        logger.info(f"Found {len(blobs)} blobs in storage.")
+        return {"files": blobs}
+    except Exception as e:
+        logger.error(f"Error listing blobs: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to list blobs from storage")
+    
+
+
+@app.post("/uploadfromblob")
+async def upload_from_blob(request: BlobNamesRequest = Body(...)):
+    logger = logging.getLogger("upload_from_blob")
+    logger.setLevel(logging.INFO)
+    file_infos = []
+    storage = StorageFactory()
+    for blob_name in request.files:
+        logger.info(f"Downloading and processing blob: {blob_name}")
+        try:
+            temp_path = f"./data/upload_{os.path.basename(blob_name)}"
+            storage.download_file(blob_name, temp_path)
+            # Inspect the audio file type first
+            try:
+                audio_info = inspect_audio(temp_path)
+            except Exception as e:
+                audio_info = {"filetype": "unknown", "success": False, "message": str(e)}
+
+            # If it's mp3, convert to wav and update temp_path
+            if audio_info.get("filetype") == "mp3":
+                try:
+                    inspection_info = inspect_mp3(temp_path)
+                except Exception as e:
+                    audio_info["conversion_error"] = str(e)
+            elif audio_info.get("filetype") == "wav":
+                inspection_info = inspect_wav(temp_path)
+
+            # Determine the filename to report (converted or original), only keep the filename, not the whole path
+            converted_path = audio_info.get("converted_wav_path")
+            if converted_path:
+                result_filename = os.path.basename(converted_path)
+            else:
+                result_filename = os.path.basename(temp_path)
+            file_infos.append({
+                "filename": result_filename,
+                "filename_original": os.path.basename(blob_name),
+                "inspect": inspection_info,
+                "filetype": audio_info.get("filetype"),
+                "audio_type": audio_info
+            })
+        except Exception as err:
+            logger.error(f"Error processing blob {blob_name}: {str(err)}")
+            file_infos.append({
+                "filename": os.path.basename(blob_name),
+                "error": str(err)
+            })
+    return {"status": "success", "files": file_infos}
+
 
 @app.post("/upload")
 async def upload_files(indexName: str = Form(...), files: List[UploadFile] = File(...)):
@@ -106,9 +179,10 @@ async def upload_files(indexName: str = Form(...), files: List[UploadFile] = Fil
             if converted_path:
                 result_filename = os.path.basename(converted_path)
             else:
-                result_filename = file.filename
+                result_filename = os.path.basename(temp_path)
             file_infos.append({
                 "filename": result_filename,
+                "filename_original": os.path.basename(file.filename),
                 "inspect": inspection_info,
                 "filetype": audio_info.get("filetype"),
                 "audio_type": audio_info
@@ -121,31 +195,35 @@ async def upload_files(indexName: str = Form(...), files: List[UploadFile] = Fil
             })
     return {"status": "success", "files": file_infos}
 
+
+# Refactored: file is a string (filename), not UploadFile
 @app.post("/submit")
 async def submit_transcription(
-    file: UploadFile = File(...),
+    file_name: str = Form(...),
+    file_name_original: str = Form(...),
     temperature: float = Form(...),
     diarization: str = Form(...),
     language: str = Form(...),
     combine: str = Form(...),
     user_id: str = Form(None),
     session_id: str = Form(None),
-    model: str = Form(None),  # <-- added model parameter
+    model: str = Form(None),
 ):
     logger = logging.getLogger("submit_transcription")
     logger.setLevel(logging.INFO)
-    logger.info(f"Received file: {file.filename}")
+    logger.info(f"Received file: {file_name}")
     logger.info(f"Temperature: {temperature}, Diarization: {diarization}, Language: {language}, Combine: {combine}, User ID: {user_id}, Session ID: {session_id}, Model: {model}")
-    # logger.info(f"Channels: {channels}, Bits/Sample: {bits_per_sample}, Sample Rate: {samples_per_second}")
 
     try:
-        # Read and save the uploaded file to a temporary location
-        contents = await file.read()
-        logger.info(f"File size: {len(contents)} bytes")
-        temp_path = f"./data/upload_{file.filename}"
-        with open(temp_path, "wb") as f_out:
-            f_out.write(contents)
-        logger.info(f"File saved to temporary path: {temp_path}")
+        # Use the provided file name as the path (assume it's in ./data or is a full path)
+        if os.path.isabs(file_name):
+            temp_path = file_name
+        else:
+            temp_path = f"./data/{file_name}"
+        if not os.path.exists(temp_path):
+            raise HTTPException(status_code=404, detail=f"File not found: {temp_path}")
+        logger.info(f"Using file at path: {temp_path}")
+
         # Inspect the audio file type first
         try:
             audio_info = inspect_audio(temp_path)
@@ -158,9 +236,8 @@ async def submit_transcription(
         if audio_info.get("filetype") == "mp3":
             try:
                 conv_result = convert_mp3_to_wav(temp_path)
-                # Update temp_path to point to the new wav file
-                temp_path = conv_result["output"]          
-                logger.info(f"Converted MP3 to WAV: {temp_path}")      
+                temp_path = conv_result["output"]
+                logger.info(f"Converted MP3 to WAV: {temp_path}")
             except Exception as e:
                 audio_info["conversion_error"] = str(e)
                 logger.error(f"Error converting MP3 to WAV: {str(e)}")
@@ -169,10 +246,9 @@ async def submit_transcription(
             pass
         else:
             raise HTTPException(status_code=400, detail="Unsupported audio format")
-        
+
         inspection_info = inspect_wav(temp_path)
         logger.info(f"Audio inspection info: {inspection_info}")
-
 
         # Prepare the transcription factory with the saved file path
         factory = TranscriptionFactory(
@@ -185,7 +261,6 @@ async def submit_transcription(
         logger.info("TranscriptionFactory initialized successfully.")
 
         def event_stream():
-            # Use a queue to communicate between callback and generator
             import queue
             q = queue.Queue()
 
@@ -193,7 +268,6 @@ async def submit_transcription(
                 logger.info(f"callback: Received event: {event_dict}")
                 q.put(event_dict)
 
-            # Run transcription in a thread to avoid blocking
             import threading
             if model == "llm":
                 logger.info("Starting LLM transcription.")
@@ -204,8 +278,6 @@ async def submit_transcription(
             else:
                 logger.error(f"Invalid model specified: {model}")
                 raise HTTPException(status_code=400, detail="Invalid model specified. Use 'llm' or 'asr'.")
-            # t = threading.Thread(target=factory.conversation_transcription, kwargs={"callback": callback})
-            # t = threading.Thread(target=factory.conversation_transcription_llm, kwargs={"callback": callback})
             t.start()
 
             while True:
@@ -213,8 +285,6 @@ async def submit_transcription(
                 event = q.get()
                 logger.info(f"event_stream: Received event: {event}")
                 yield f"data: {json.dumps(event)}\n\n"
-                # Optionally break on a certain event type
-                # if event.get("event_type") in ("closing", "session_stopped", "canceled"):
                 if event.get("event_type") in ("closing","session_stopped"):
                     logger.info("event_stream: Ending stream on session_stopped or closing event.")
                     break

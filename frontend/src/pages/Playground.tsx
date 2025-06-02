@@ -1,6 +1,7 @@
 // Interface for uploaded file info
 interface UploadedFile {
   filename: string;
+  filename_original: string; // original filename for display
   inspect: {
     channels: number;
     bits_per_sample: number;
@@ -44,6 +45,7 @@ import { Card, CardContent, CardFooter, CardHeader} from "@/components/ui/card"
 import { AudioLines, CloudUpload, DownloadCloud, Info, Loader2, CirclePause, CirclePlay, Search, Check } from "lucide-react"
 import { ModeToggle } from '@/components/mode-toggle'
 import { Input } from '@/components/ui/input';
+import { useCallback } from 'react';
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
@@ -74,46 +76,105 @@ export default function App() {
   
   
 
-  // File upload state
+
+  // Upload step mode: 'local' or 'blob'
+  const [uploadMode, setUploadMode] = useState<'local' | 'blob'>('local');
+  // Local file upload state
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  // Blob storage state
+  const [blobFiles, setBlobFiles] = useState<string[]>([]); // all blobs fetched from backend
+  const [selectedBlobFiles, setSelectedBlobFiles] = useState<string[]>([]); // user-selected blobs
+  const [isLoadingBlobs, setIsLoadingBlobs] = useState(false);
+  // Common upload state
   const [uploadStatus, setUploadStatus] = useState<string>('');
   const [isUploading, setIsUploading] = useState<boolean>(false);
-  const [isUploaded, setIsUploaded] = useState<boolean>(false); // new variable
-  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]); // store uploaded files info
+  const [isUploaded, setIsUploaded] = useState<boolean>(false);
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
 
+  // Handle switch between local/blob
+  const handleUploadModeChange = (val: 'local' | 'blob') => {
+    setUploadMode(val);
+    setUploadStatus('');
+    setIsUploaded(false);
+    setUploadedFiles([]);
+    setSelectedFiles([]);
+    setSelectedBlobFiles([]);
+    if (val === 'blob') {
+      fetchBlobFiles();
+    }
+    console.log('uploadStatus is:', uploadStatus);
+  };
+
+  // Fetch blobs from backend
+  const fetchBlobFiles = useCallback(async () => {
+    setIsLoadingBlobs(true);
+    setBlobFiles([]);
+    setSelectedBlobFiles([]);
+    try {
+      const response = await axios.get(`${BASE_URL}/loadfiles`);
+      setBlobFiles(response.data.files || response.data || []);
+    } catch (err) {
+      setBlobFiles([]);
+    }
+    setIsLoadingBlobs(false);
+  }, []);
+
+  // Local file input handler
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setSelectedFiles(Array.from(e.target.files));
       setUploadStatus('');
-      setIsUploaded(false); // reset on new file select
+      setIsUploaded(false);
     }
   };
 
+  // Blob file selection handler
+  const handleBlobSelect = (blob: string) => {
+    setSelectedBlobFiles(prev =>
+      prev.includes(blob) ? prev.filter(f => f !== blob) : [...prev, blob]
+    );
+  };
+
+  // Upload handler for both modes
   const handleUpload = async () => {
-    if (!selectedFiles.length) return;
     setIsUploading(true);
-    setUploadStatus('Uploading...');
+    setUploadStatus(uploadMode === 'local' ? 'Uploading...' : 'Loading from blob...');
     setIsUploaded(false);
-    setUploadedFiles([]); // reset before upload
+    setUploadedFiles([]);
     try {
-      const formData = new FormData();
-      formData.append('indexName', 'default'); // required by backend
-      selectedFiles.forEach(file => {
-        formData.append('files', file); // must match backend param name
-      });
-      const response = await axios.post(`${BASE_URL}/upload`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      console.log('Upload response:', response.data);
-      setUploadStatus(response.data.status || 'Upload successful');
-      setIsUploaded(response.data.status === 'success'); // set true if upload is successful
-      setUploadedFiles(response.data.files || []); // save files array
+      if (uploadMode === 'local') {
+        if (!selectedFiles.length) return;
+        const formData = new FormData();
+        formData.append('indexName', 'default');
+        selectedFiles.forEach(file => {
+          formData.append('files', file);
+        });
+        const response = await axios.post(`${BASE_URL}/upload`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        setUploadStatus(response.data.status || 'Upload successful');
+        setIsUploaded(response.data.status === 'success');
+        setUploadedFiles(response.data.files || []);
+        console.log('Blob upload response:', response.data.files);
+        console.log('Selected files:', selectedFiles);
+      } else {
+        if (!selectedBlobFiles.length) return;
+        // Use /uploadfromblob endpoint for blobs
+        const response = await axios.post(`${BASE_URL}/uploadfromblob`, {
+          files: selectedBlobFiles
+        });
+        setUploadStatus(response.data.status || 'Loaded from blob');
+        setIsUploaded(response.data.status === 'success' || response.data.status === 'loaded');
+        setUploadedFiles(response.data.files || []);
+        console.log('Blob upload response:', response.data.files);
+        console.log('Selected files:', selectedFiles);
+        console.log('Selected blob files:', selectedBlobFiles);
+      }
     } catch (error: any) {
       setUploadStatus('Upload failed');
       setIsUploaded(false);
       setUploadedFiles([]);
     }
-    console.log('Upload status:', uploadStatus);
     setIsUploading(false);
   };
 
@@ -239,7 +300,7 @@ export default function App() {
       language,
     });
 
-    if (!selectedFiles.length) return;
+    if (!uploadedFiles.length) return;
     setIsProcessing(true);
     setIsProcessed(false);
     setTranscriptionResult(null);
@@ -251,15 +312,16 @@ export default function App() {
     try {
       let allResultsCombined: any[] = [];
       let groupedResults: Record<string, any[]> = {};
-      
-      for (const file of selectedFiles) {
+
+      for (const file of uploadedFiles) {
         const formData = new FormData();
-        formData.append('file', file);
+        formData.append('file_name', file.filename); // file.filename is now the path or name
+        formData.append('file_name_original', file.filename_original); // keep original name for display
         formData.append('temperature', temperature.toString());
         formData.append('diarization', diarization ? 'true' : 'false');
         formData.append('combine', combine ? 'true' : 'false');
-        formData.append('language', language); // add language to form data
-        formData.append('model', model); // add model selection
+        formData.append('language', language);
+        formData.append('model', model);
 
         const response = await fetch(`${BASE_URL}/submit`, {
           method: 'POST',
@@ -287,33 +349,33 @@ export default function App() {
                 try {
                   const data = JSON.parse(jsonStr);
                   setSessionID(data.session);
-                  
+
                   // Extract just the filename from the full path (remove ./data/upload_ prefix)
                   let cleanFilename = data.filename;
                   if (cleanFilename && cleanFilename.includes('/')) {
-                    cleanFilename = cleanFilename.split('/').pop(); // Get last part after /
+                    cleanFilename = cleanFilename.split('/').pop();
                   }
                   if (cleanFilename && cleanFilename.startsWith('upload_')) {
-                    cleanFilename = cleanFilename.substring(7); // Remove 'upload_' prefix
+                    cleanFilename = cleanFilename.substring(7);
                   }
-                  
+
                   const resultItem = {
-                    filename: cleanFilename || file.name,
-                    originalPath: data.filename, // Keep original for debugging
+                    filename: cleanFilename || file.filename,
+                    originalPath: data.filename,
                     status: data.event_type,
                     session: data.session,
                     message: data.text,
                     ...data
                   };
                   results.push(resultItem);
-                  
+
                   // Group results by cleaned filename
-                  const filename = cleanFilename || file.name;
+                  const filename = cleanFilename || file.filename;
                   if (!groupedResults[filename]) {
                     groupedResults[filename] = [];
                   }
                   groupedResults[filename].push(resultItem);
-                  
+
                   setTranscriptionResult({
                     filename: data.filename,
                     status: data.event_type,
@@ -321,7 +383,7 @@ export default function App() {
                     session: data.session,
                     ...data
                   });
-                  setAllResults([...allResultsCombined, ...results]); // update allResults as we go
+                  setAllResults([...allResultsCombined, ...results]);
                 } catch (err) {
                   // ignore parse errors for incomplete chunks
                 }
@@ -341,7 +403,7 @@ export default function App() {
       const seconds = Math.floor((elapsedTime % 60000) / 1000);
       setSessionTime(`${minutes}:${seconds < 10 ? '0' : ''}${seconds}`);
       setAllResults(allResultsCombined);
-      setGroupedResults(groupedResults); // set the grouped results state
+      setGroupedResults(groupedResults);
       setIsProcessed(true);
       setIsProcessing(false);
 
@@ -512,37 +574,86 @@ export default function App() {
             {/* Agents setup */}
             {/* if session is running display loader */}
             <div className="min-h-[100vh] flex-1 rounded-xl bg-muted/50 md:min-h-min">
-              {/* Chat Interface */}
               
+              {/* Upload files */}
               <Card className="md:col-span-2 flex flex-col">
                 <CardHeader className="py-2">
                   <h2 className="text-lg font-semibold mb-4">Step 1. Upload a recording</h2>
                 </CardHeader>
                 {!false && (
                 <CardContent className="flex-1 h-96">
-
                   <Separator className='my-2 invisible'/>
-                  {/* File upload UI */}
-                  <div className="mb-4">
-                    <label className="block mb-2 text-sm font-medium">Upload audio file (.wav, .mp3):</label>
-                    <Input
-                      type="file"
-                      accept=".wav,.mp3"
-                      onChange={handleFileChange}
-                      disabled={isUploading}
-                      className="mb-2"
-                      multiple={true} // allow only single file upload
-                    />
-                    <Button
-                      onClick={handleUpload}
-                      disabled={selectedFiles.length === 0 || isUploading}
-                      variant="outline"
-                    >
-                      
-                      {isUploading ? <Loader2 className="ml-2 h-4 w-4 animate-spin" /> : <CloudUpload className="mr-1 inline h-4 w-4" />}
-                      {isUploading ? 'Uploading...' : 'Upload'}
-                    </Button>
+                  {/* Upload mode switch */}
+                  <div className="mb-4 flex gap-4 items-center">
+                    <Label className="mr-2">Source:</Label>
+                    <Select value={uploadMode} onValueChange={val => handleUploadModeChange(val as 'local' | 'blob')}>
+                      <SelectTrigger className="w-40">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="local">Local File System</SelectItem>
+                        <SelectItem value="blob">Blob Storage</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
+                  {/* Local file upload UI */}
+                  {uploadMode === 'local' && (
+                    <div className="mb-4">
+                      <label className="block mb-2 text-sm font-medium">Upload audio file (.wav, .mp3):</label>
+                      <Input
+                        type="file"
+                        accept=".wav,.mp3"
+                        onChange={handleFileChange}
+                        disabled={isUploading}
+                        className="mb-2"
+                        multiple={true}
+                      />
+                      <Button
+                        onClick={handleUpload}
+                        disabled={selectedFiles.length === 0 || isUploading}
+                        variant="outline"
+                      >
+                        {isUploading ? <Loader2 className="ml-2 h-4 w-4 animate-spin" /> : <CloudUpload className="mr-1 inline h-4 w-4" />}
+                        {isUploading ? 'Uploading...' : 'Upload'}
+                      </Button>
+                    </div>
+                  )}
+                  {/* Blob storage UI */}
+                  {uploadMode === 'blob' && (
+                    <div className="mb-4">
+                      <label className="block mb-2 text-sm font-medium">Select files from Blob Storage:</label>
+                      {isLoadingBlobs ? (
+                        <div className="flex items-center gap-2 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading blobs...</div>
+                      ) : (
+                        <div className="max-h-40 overflow-y-auto border rounded p-2 mb-2 bg-muted/30">
+                          {blobFiles.length === 0 ? (
+                            <div className="text-xs text-muted-foreground">No blobs found.</div>
+                          ) : (
+                            blobFiles.map(blob => (
+                              <div key={blob} className="flex items-center gap-2 py-1">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedBlobFiles.includes(blob)}
+                                  onChange={() => handleBlobSelect(blob)}
+                                  id={`blob-${blob}`}
+                                  className="accent-blue-500"
+                                />
+                                <label htmlFor={`blob-${blob}`} className="text-xs font-mono break-all cursor-pointer">{blob}</label>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
+                      <Button
+                        onClick={handleUpload}
+                        disabled={selectedBlobFiles.length === 0 || isUploading}
+                        variant="outline"
+                      >
+                        {isUploading ? <Loader2 className="ml-2 h-4 w-4 animate-spin" /> : <DownloadCloud className="mr-1 inline h-4 w-4" />}
+                        {isUploading ? 'Loading...' : 'Load Selected'}
+                      </Button>
+                    </div>
+                  )}
                 </CardContent>
                 )}
                 {isUploaded && (
@@ -552,6 +663,11 @@ export default function App() {
                 )}
               </Card>
               <Separator className='my-2 invisible'/>
+
+
+
+
+
               {/* Audio transcription settings card */}
               {isUploaded && (
                 <Card className="md:col-span-2 flex flex-col">
@@ -572,7 +688,7 @@ export default function App() {
                             >
                               <div className="flex items-center gap-4 w-full justify-center">
                                 <AudioLines className="h-8 w-8 text-blue-500" />
-                                <div className="font-mono text-sm text-foreground break-all">{file.filename}
+                                <div className="font-mono text-sm text-foreground break-all">{file.filename_original}
                                   <Separator className="my-1"/>
                                   <div className="flex flex-wrap gap-4 mt-2 text-xs text-muted-foreground justify-center">
                                     <div>Channels: <span className="font-semibold text-foreground">{file.inspect.channels}</span></div>
