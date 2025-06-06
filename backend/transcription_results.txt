@@ -1,13 +1,4 @@
-Session: 807c5f33efca405cade8ebecdb9774fa, Offset: 2300000, Duration: 6800000, Text: Доброго дня., Speaker ID: Guest-1, Result ID: 1d4136feae37446fa99710602c9bebdf
-Session: 807c5f33efca405cade8ebecdb9774fa, Offset: 20300000, Duration: 40000000, Text: Я хотів би дізнатися, чому з мого рахунку списали 1200 гривень., Speaker ID: Guest-1, Result ID: 1ab7744a57214776b790ad7654d66508
-Session: 807c5f33efca405cade8ebecdb9774fa, Offset: 70300000, Duration: 8800000, Text: Доброго дня., Speaker ID: Guest-1, Result ID: d3e0d32e8af840a784b70adad996f87d
-Session: 807c5f33efca405cade8ebecdb9774fa, Offset: 88700000, Duration: 18800000, Text: Зараз перевірю інформацію., Speaker ID: Guest-2, Result ID: 4d62c8f2b2944dccab34c735a2c102c1
-Session: 807c5f33efca405cade8ebecdb9774fa, Offset: 117100000, Duration: 28400000, Text: Зачекайте, будь ласка, кілька секунд., Speaker ID: Guest-2, Result ID: f0e8720e427f490ea34e4959caeb405a
-Session: 807c5f33efca405cade8ebecdb9774fa, Offset: 155900000, Duration: 13600000, Text: Добре чекаю., Speaker ID: Guest-1, Result ID: b28dbca676024f55a561cee7840b4dd0
-Session: 807c5f33efca405cade8ebecdb9774fa, Offset: 179500000, Duration: 15200000, Text: Дякую за очікування 2., Speaker ID: Guest-2, Result ID: 68f0173c74e24020b3b5da1c9236cb9c
-Session: 807c5f33efca405cade8ebecdb9774fa, Offset: 203900000, Duration: 43600000, Text: Це було щомісячне обслуговування картки відповідно до тарифного плану., Speaker ID: Guest-2, Result ID: ffbbce3c389f4361a57190cfd42b2ac1
-Session: 807c5f33efca405cade8ebecdb9774fa, Offset: 257500000, Duration: 34000000, Text: А чи можна змінити тариф, щоб уникнути цієї комісії?, Speaker ID: Guest-1, Result ID: 65c10283f52f41fe9e20391c81b31580
-Session: 807c5f33efca405cade8ebecdb9774fa, Offset: 301100000, Duration: 12400000, Text: Так, звичайно., Speaker ID: Guest-2, Result ID: 2873d9eef27e41b8b0b9cf0d5cf5ed56
-Session: 807c5f33efca405cade8ebecdb9774fa, Offset: 323100000, Duration: 56000000, Text: Можу запропонувати безкоштовний тариф за умови мінімального щомісячного залишку на рахунку., Speaker ID: Guest-2, Result ID: b1652ba89dd248f2bb357eec416f94d4
-Session: 807c5f33efca405cade8ebecdb9774fa, Offset: 388700000, Duration: 27600000, Text: Чудово, будь ласка, підключіть його., Speaker ID: Guest-1, Result ID: b97b79379bd34ea6a7f3b95c924e2a36
-Session: 807c5f33efca405cade8ebecdb9774fa, Offset: 441900000, Duration: 43600000, Text: Тариф, змінено комісії більше не буде, якщо виконуватимуться умови., Speaker ID: Guest-2, Result ID: b75777a294da4eb1ba7bff36a1da9186
+Session: 3cdc649ba63a4ed9ace1c02fff5edf06, Offset: 0, Duration: 148400000, Text: , Speaker ID: Unknown, Result ID: e21eec472d8a493fa060797f646a3323
+Session: 3cdc649ba63a4ed9ace1c02fff5edf06, Offset: 150000000, Duration: 148800000, Text: , Speaker ID: Unknown, Result ID: da30899cb451410fbffb0d72a25037f1
+Session: 3cdc649ba63a4ed9ace1c02fff5edf06, Offset: 298800000, Duration: 150400000, Text: , Speaker ID: Unknown, Result ID: 017d6a8588cf4191a2731b50e2614e79
+Session: 3cdc649ba63a4ed9ace1c02fff5edf06, Offset: 450600000, Duration: 66000000, Text: , Speaker ID: Unknown, Result ID: 502b13bbee7641aea3ba93b6412cafe7

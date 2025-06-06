@@ -158,6 +158,40 @@ def trim_mp3(filepath, number_of_seconds, output_path=None):
             "success": False,
             "message": f"Error trimming MP3 file: {e}"
         }
+    
+def convert_stereo_wav_to_mono(input_path, output_path=None):
+    """
+    Converts a stereo WAV file to mono by combining channels and saves the result.
+    If output_path is not provided, overwrites the original file.
+    Returns a dict with success status and message.
+    """
+    try:
+        audio = AudioSegment.from_wav(input_path)
+        if audio.channels == 1:
+            return {
+                "input": input_path,
+                "output": output_path or input_path,
+                "success": True,
+                "message": f"'{input_path}' is already mono. No conversion needed."
+            }
+        mono_audio = audio.set_channels(1)
+        if output_path is None:
+            output_path = input_path
+        mono_audio.export(output_path, format="wav")
+        return {
+            "input": input_path,
+            "output": output_path,
+            "success": True,
+            "message": f"Converted stereo WAV '{input_path}' to mono and saved to '{output_path}'."
+        }
+    except Exception as e:
+        return {
+            "input": input_path,
+            "output": output_path,
+            "success": False,
+            "message": f"Error converting stereo WAV to mono: {e}"
+        }
+
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:

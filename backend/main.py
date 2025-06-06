@@ -232,6 +232,7 @@ async def submit_transcription(
             audio_info = {"filetype": "unknown", "success": False, "message": str(e)}
             logger.error(f"Error inspecting audio file: {str(e)}")
 
+
         # If it's mp3, convert to wav and update temp_path
         if audio_info.get("filetype") == "mp3":
             try:
@@ -243,12 +244,20 @@ async def submit_transcription(
                 logger.error(f"Error converting MP3 to WAV: {str(e)}")
         elif audio_info.get("filetype") == "wav":
             logger.info("File is already in WAV format, no conversion needed.")
-            pass
         else:
             raise HTTPException(status_code=400, detail="Unsupported audio format")
 
+        # After conversion to wav, check if stereo and convert to mono if needed
+        from utils.audio import convert_stereo_wav_to_mono
         inspection_info = inspect_wav(temp_path)
-        logger.info(f"Audio inspection info: {inspection_info}")
+        logger.info(f"Audio inspection info before mono check: {inspection_info}")
+        if inspection_info.get("channels") == 2:
+            logger.info(f"Converting stereo WAV to mono: {temp_path}")
+            mono_result = convert_stereo_wav_to_mono(temp_path)
+            logger.info(mono_result["message"])
+            # Re-inspect after conversion
+            inspection_info = inspect_wav(temp_path)
+            logger.info(f"Audio inspection info after mono conversion: {inspection_info}")
 
         # Prepare the transcription factory with the saved file path
         factory = TranscriptionFactory(
