@@ -372,18 +372,15 @@ async def submit_batch_transcription(
 
 @app.post("/analyze")
 async def analyze_transcript(
-    # transcript: dict = Body(..., example={"text": "This is a sample transcript."}),
     transcript: str = Form(..., example="This is a sample transcript."),
-    # user_id: str = None,
-    # session_id: str = None
+    customPrompt: str = Form(None),
 ):
     """
-    Analyze a transcript sent via POST. Expects JSON: {"text": "..."}
+    Analyze a transcript sent via POST. Expects transcript and optional customPrompt.
     Returns a simple analysis (e.g., word count, sentence count, keywords).
     """
     logger = logging.getLogger("analyze_transcript")
     logger.setLevel(logging.INFO)
-    # logger.info(f"Received transcript for analysis. User: {user_id}, Session: {session_id}")
 
     text = transcript
     if not text:
@@ -400,7 +397,10 @@ async def analyze_transcript(
             q.put(event_dict)
 
         def run_analysis():
-            af.analyze_transcript(text, callback=callback)
+            if customPrompt and customPrompt.strip():
+                af.analyze_transcript(text, callback=callback, custom_prompt=customPrompt)
+            else:
+                af.analyze_transcript(text, callback=callback)
 
         t = threading.Thread(target=run_analysis)
         t.start()
@@ -408,10 +408,7 @@ async def analyze_transcript(
         def event_stream():
             while True:
                 event = q.get()
-                # event_json = json.loads(event["data"]["text"])
-
                 yield f"data: {json.dumps(event)}\n\n"
-                # End on a final message (could be improved to check for a specific key)
                 if event.get("message") == "Query executed successfully":
                     break
             t.join()

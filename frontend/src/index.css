@@ -24,6 +24,14 @@
   margin-top: 12px;
   margin-bottom: 2px;
 }
+
+
+.message h2 {
+  font-size: 1.2em;
+  font-weight: 600;
+  margin-top: 12px;
+  margin-bottom: 2px;
+}
 .message h3 {
   font-size: 1.2em;
   font-weight: 600;

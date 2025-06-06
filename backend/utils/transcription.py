@@ -475,10 +475,20 @@ class TranscriptionFactory:
                 "content": [
                      {
                         "type": "text",
-                        "text": f"""Transcribe the following conversation in {self.language} in attached file. Output format:
-                        #Speaker-1:# text
-                        #Speaker-2:# text
-                        #Speaker-3:# text
+                        # "text": f"""Transcribe the following conversation in {self.language} in attached file. Output format:
+                        # #Speaker-1:# text
+                        # #Speaker-2:# text
+                        # #Speaker-3:# text
+                        # etc.
+                        # """
+                        "text": f"""Transcribe the following conversation in Ukrainian and Russian language in attached file. 
+
+                        The languages are mixed in the conversation, so you need to detect the language of each speaker and transcribe it accordingly.
+
+                        Output format:
+                        #Speaker-1:# (language) text
+                        #Speaker-2:# (language) text
+                        #Speaker-3:# (language) text
                         etc.
                         """
                     },

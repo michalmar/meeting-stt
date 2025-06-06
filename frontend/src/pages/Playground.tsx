@@ -475,48 +475,55 @@ export default function App() {
   const [analysisResult, setAnalysisResult] = useState<any>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState<string>("");
+  // Step 4: Custom prompt logic
+  const [useCustomPrompt, setUseCustomPrompt] = useState<boolean>(false);
+  const [customPrompt, setCustomPrompt] = useState<string>("");
 
   const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsAnalyzing(true);
     setAnalyzeError("");
     setAnalysisResult(null);
-  
+
     try {
       const formData = new FormData();
       formData.append('transcript', analysisText);
-  
+      if (useCustomPrompt && customPrompt.trim()) {
+        formData.append('customPrompt', customPrompt);
+      }
+
       const response = await fetch(`${BASE_URL}/analyze`, {
         method: 'POST',
         body: formData,
       });
-  
+
       if (!response.body) {
         throw new Error('No response body');
       }
-  
+
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-  
+
       let lastText = "";
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         const chunk = decoder.decode(value, { stream: true });
-        console.log('Received chunk:', chunk);
+        // console.log('Received chunk:', chunk);
         const lines = chunk.split('\n');
         for (const line of lines) {
           const trimmed = line.trim();
           if (trimmed.startsWith('data:')) {
             const jsonStr = trimmed.slice(5).trim();
-            console.log('Parsed JSON:', jsonStr);
+            // console.log('Parsed JSON:', jsonStr);
             if (jsonStr) {
               try {
                 const data = JSON.parse(jsonStr);
-                console.log('Parsed data:', data);
+                // console.log('Parsed data:', data);
                 if (data?.data?.text) {
                   lastText = data.data.text;
                   setAnalysisResult(lastText); // update as you go
+                  console.log('Analysis result updated:', lastText);
                 }
               } catch (err) {
                 // ignore parse errors for incomplete chunks
@@ -1000,6 +1007,20 @@ export default function App() {
                   </CardHeader>
                   <CardContent className="py-6">
                     <form onSubmit={handleAnalyze} className="space-y-4">
+                      {/* Custom prompt switch */}
+                      <div className="flex items-center gap-2 mt-2">
+                        <Switch id="custom-prompt-switch" checked={useCustomPrompt} onCheckedChange={setUseCustomPrompt} />
+                        <Label htmlFor="custom-prompt-switch">Use custom prompt to analyze transcript</Label>
+                      </div>
+                      {useCustomPrompt && (
+                        <textarea
+                          className="w-full min-h-[260px] border rounded p-2 font-mono text-sm mt-2"
+                          value={customPrompt}
+                          onChange={e => setCustomPrompt(e.target.value)}
+                          placeholder="Enter your custom prompt here..."
+                          disabled={isAnalyzing}
+                        />
+                      )}
                       <textarea
                         className="w-full min-h-[120px] border rounded p-2 font-mono text-sm"
                         value={analysisText}
@@ -1020,14 +1041,12 @@ export default function App() {
                         className="mt-2"
                         onClick={() => {
                           let text = '';
-                          
                           // If we have grouped results, format by filename
                           if (Object.keys(groupedResults).length > 0) {
                             text = Object.entries(groupedResults)
                               .map(([filename, results]) => {
                                 const transcriptedResults = results.filter(result => result.status === "transcribed" && result.message);
                                 if (transcriptedResults.length === 0) return '';
-                                
                                 const fileSection = `=== ${filename} ===\n\n` +
                                   transcriptedResults
                                     .map(result => `${getSpeakerName(result.speaker_id, filename)}: ${result.message}`)
@@ -1043,7 +1062,6 @@ export default function App() {
                               .map(result => `${getSpeakerName(result.speaker_id)}: ${result.message}`)
                               .join('\n');
                           }
-                          
                           setAnalysisText(text);
                         }}
                       >

@@ -1,3 +1,4 @@
+
 import os
 import json
 from collections import Counter, defaultdict
@@ -5,6 +6,7 @@ from openai import AzureOpenAI
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from dotenv import load_dotenv
 import logging
+from pathlib import Path
 
 # Configure logging
 logging.basicConfig(level=logging.WARNING)
@@ -39,17 +41,16 @@ class AnalysisFactory:
         )
 
 
-    def analyze_transcript(self, transcript, callback=None):
+    def analyze_transcript(self, transcript, callback=None, custom_prompt=None):
         """
         Analyze a transcript string for basic statistics: word count, speaker count, duration, per-speaker stats.
         Expects a transcript string with one JSON or text line per utterance.
         Calls the callback with each parsed utterance (optional).
         Returns a dictionary with analytics results.
+        Accepts an optional custom_prompt to override the default system prompt.
         """
-        
-        text = self._run_query(transcript, callback=callback)
-
-
+        text = self._run_query(transcript, callback=callback, custom_prompt=custom_prompt)
+    
         analysis = {
             "transcript_text": transcript,
             "main_summary": text,
@@ -62,56 +63,36 @@ class AnalysisFactory:
                 "analysis": analysis,
             }
         }
-        
-
+    
         if callback:
             callback(ret)
         return ret
 
-    def _run_query(self, prompt, callback=None):
+
+    def _run_query(self, prompt, callback=None, custom_prompt=None):
         """
         Run a query against the analyzed transcript data.
         """
+
+        if custom_prompt and custom_prompt.strip():
+            system_prompt = custom_prompt.strip()
+        else:
+            # Load system prompt from JINJA2 file
+            prompt_path = Path(__file__).parent.parent / "prompts" / "transcript_analysis.jinja2"
+            try:
+                with open(prompt_path, "r", encoding="utf-8") as f:
+                    system_prompt = f.read()
+            except Exception as e:
+                logger.error(f"Could not read system prompt file: {e}")
+                system_prompt = "You are a professional call transcript analyst assistant. (Prompt file missing)"
+
         messages = [
             {
                 "role": "system",
                 "content": [
                     {
                         "type": "text",
-                        "text": """
-                        You are a professional analyst and reporter. Your task is to analyze the following meeting transcript and provide:
-                        1. A detailed summary of the main topics discussed
-                        2. The most active speakers in the meeting
-                        3. Any notable quotes or statements made by the speakers
-                        4. Tasks or action items that were assigned during the meeting with their respective owners and deadlines 
-
-                        """
-                        # "text": """
-                        # You are a /proffesional call transcript analystassistant. 
-                        
-                        # Analyze the following customer service call transcript between a banking agent and a customer. Identify and summarize the following:
-                        # 1.	Customer’s main issue or request
-                        # 2.	Agent’s response approach (e.g., helpful, formal, empathetic, etc.)
-                        # 3.	Tone and sentiment of both the customer and the agent
-                        # 4.	Was the issue resolved? Explain how.
-                        # 5.	Suggestions for improving the interaction, if any
-
-                        # ouptut should be in a JSON format with the following keys:
-                        # {
-                        #     "customer_issue": "Customer's main issue or request",
-                        #     "agent_response_approach": "Agent's response approach (e.g., helpful, formal, empathetic, etc.)",
-                        #     "tone_and_sentiment": { 
-                        #         "customer": "Tone and sentiment of the customer",
-                        #         "agent": "Tone and sentiment of the agent"
-                        #     },  
-                        #     "issue_resolution": "Was the issue resolved? Explain how.",
-                        #     "improvement_suggestions": "Suggestions for improving the interaction, if any"
-                        # }
-                        # Make sure to provide a detailed and comprehensive analysis.
-                        # If you are not sure about something, just say "I don't know".
-                        # Do not make up any information.
-                        # Do not include any additional text or explanations outside of the JSON format.
-                        # """
+                        "text": system_prompt
                     }
                 ]
             },

@@ -15,7 +15,7 @@ param azureOpenaiDeploymentNameEmbedding string = 'text-embedding-3-large'
 @description('Name of the additional OpenAI resource for transcription')
 param azureOpenaiTranscribeResourceName string = 'transcribeopenai'
 @description('Deployment name for the transcription model')
-param azureOpenaiTranscribeDeploymentName string = 'gpt-4o-transcribe'
+param azureOpenaiTranscribeDeploymentName string = 'gpt-4o-audio-preview'
 
 @description('Custom subdomain name for the OpenAI resource (must be unique in the region)')
 param customSubDomainName string
