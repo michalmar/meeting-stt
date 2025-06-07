@@ -513,9 +513,16 @@ class TranscriptionFactory:
         transcription_text = completion.choices[0].message.content
         logger.info(f"Transcription result: {transcription_text}")
 
-        # Parse the JSON array returned by the LLM
+        # Parse the JSON array returned by the LLM, handling markdown code blocks if present
+        import re
         try:
-            transcription_items = json.loads(transcription_text)
+            # Remove markdown code block if present
+            match = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", transcription_text)
+            if match:
+                json_str = match.group(1)
+            else:
+                json_str = transcription_text
+            transcription_items = json.loads(json_str)
         except Exception as e:
             logger.error(f"Failed to parse LLM transcription as JSON: {e}")
             if callback:
