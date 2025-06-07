@@ -14,7 +14,7 @@ from scipy.io import wavfile
 import azure.cognitiveservices.speech as speechsdk
 from azure.cognitiveservices.speech.transcription import ConversationTranscriptionEventArgs,ConversationTranscriptionResult
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-
+from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv(override=True)
 
@@ -439,11 +439,13 @@ class TranscriptionFactory:
         """
         Transcribes a conversation using an LLM-based API (e.g., OpenAI Whisper/gpt-4o-transcribe),
         outputs results similar to conversation_transcription, and supports an optional callback(event_dict).
+        Now expects the LLM to return a JSON array of objects with keys: timestamp, text, speaker, language.
         """
         logger = logging.getLogger(__name__)
         logger.info("Starting LLM-based conversation transcription.")
         import base64
         from openai import AzureOpenAI
+        import json
         api_key = os.getenv("AZURE_OPENAI_KEY_TRANSCRIBE")
         api_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT_TRANSCRIBE")
 
@@ -459,6 +461,15 @@ class TranscriptionFactory:
             api_version="2025-01-01-preview",
         )
         logger.info("Initiated LLM client.")
+
+        prompt_path = Path(__file__).parent.parent / "prompts" / "transcript.jinja2"
+        try:
+            with open(prompt_path, "r", encoding="utf-8") as f:
+                system_prompt = f.read()
+        except Exception as e:
+            logger.error(f"Could not read system prompt file: {e}")
+            system_prompt = "You are a professional call transcript analyst assistant. (Prompt file missing)"
+
         encoded_image = base64.b64encode(open(self.conversationfilename, 'rb').read()).decode('ascii')
         chat_prompt = [
             {
@@ -466,32 +477,13 @@ class TranscriptionFactory:
                 "content": [
                     {
                         "type": "text",
-                        "text": "You are an AI assistant that helps people find information."
+                        "text": system_prompt
                     }
                 ]
             },
             {
                 "role": "user",
                 "content": [
-                     {
-                        "type": "text",
-                        # "text": f"""Transcribe the following conversation in {self.language} in attached file. Output format:
-                        # #Speaker-1:# text
-                        # #Speaker-2:# text
-                        # #Speaker-3:# text
-                        # etc.
-                        # """
-                        "text": f"""Transcribe the following conversation in Ukrainian and Russian language in attached file. 
-
-                        The languages are mixed in the conversation, so you need to detect the language of each speaker and transcribe it accordingly.
-
-                        Output format:
-                        #Speaker-1:# (language) text
-                        #Speaker-2:# (language) text
-                        #Speaker-3:# (language) text
-                        etc.
-                        """
-                    },
                     {
                         "type": "input_audio",
                         "input_audio": {
@@ -518,31 +510,54 @@ class TranscriptionFactory:
         )
         logger.info("Transcribed.")
 
-        logger.info(f"Transcription result: {completion.choices[0].message.content}")
-
         transcription_text = completion.choices[0].message.content
-        
-        # Parse speaker lines and emit as individual transcription_object events
-        import re
-        speaker_line_pattern = re.compile(r"^#(Speaker-\d+):#\s*(.*)$", re.MULTILINE)
-        matches = speaker_line_pattern.findall(transcription_text)
-        for speaker_id, text in matches:
+        logger.info(f"Transcription result: {transcription_text}")
+
+        # Parse the JSON array returned by the LLM
+        try:
+            transcription_items = json.loads(transcription_text)
+        except Exception as e:
+            logger.error(f"Failed to parse LLM transcription as JSON: {e}")
+            if callback:
+                callback({"event_type": "error", "error": str(e), "raw_content": transcription_text})
+            return
+
+        def timestamp_to_ticks(ts):
+            """Convert MM:SS or H:MM:SS to milliseconds."""
+            try:
+                parts = ts.strip().split(":")
+                if len(parts) == 2:
+                    minutes, seconds = parts
+                    total_ms = int(minutes) * 60 * 1000 + int(float(seconds) * 1000)
+                elif len(parts) == 3:
+                    hours, minutes, seconds = parts
+                    total_ms = int(hours) * 3600 * 1000 + int(minutes) * 60 * 1000 + int(float(seconds) * 1000)
+                else:
+                    total_ms = 0
+                return total_ms * 10000  # Convert to ticks (1 tick = 100 nanoseconds)
+            except Exception:
+                return 0
+
+        for item in transcription_items:
+            ts = item.get("timestamp")
+            offset_ms = timestamp_to_ticks(ts) if ts else None
             transcription_object = {
                 "event_type": "transcribed",
                 "session": None,
-                "offset": None,
+                "offset": offset_ms,
                 "duration": None,
-                "text": text,
-                "speaker_id": speaker_id,
+                "text": item.get("text"),
+                "speaker_id": item.get("speaker"),
                 "result_id": None,
                 "filename": self.conversationfilename,
+                "language": item.get("language"),
             }
             if callback:
                 callback(transcription_object)
 
         logger.info("Finished.")
         if callback:
-            callback({"event_type":"session_stopped", "filename":self.conversationfilename})
+            callback({"event_type": "session_stopped", "filename": self.conversationfilename})
 
 
 def cback(event_dict):
