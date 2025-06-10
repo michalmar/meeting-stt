@@ -363,6 +363,138 @@ def quick_split_audio(input_file, silence_duration=3.0, sensitivity=1e-6):
     )
 
 
+def split_wav_by_time(input_file, 
+                     chunk_duration=30.0, 
+                     output_dir=None, 
+                     overlap=0.0,
+                     dry_run=False):
+    """
+    Split a WAV file into fixed-duration chunks.
+    
+    Args:
+        input_file (str): Path to the input WAV file
+        chunk_duration (float): Duration of each chunk in seconds. Default: 30.0
+        output_dir (str): Output directory for split files. Defaults to data/split folder
+        overlap (float): Overlap between chunks in seconds. Default: 0.0
+        dry_run (bool): If True, don't write files, just return split information. Default: False
+    
+    Returns:
+        dict: Contains success status, message, and list of output files
+    """
+    
+    try:
+        # Set default output directory to data/split
+        if output_dir is None:
+            output_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'split')
+        
+        # Ensure output directory exists
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Get output filename prefix
+        output_filename_prefix = os.path.splitext(os.path.basename(input_file))[0]
+        
+        print(f"Splitting {input_file} into {chunk_duration}s chunks with {overlap}s overlap.")
+        
+        # Read the WAV file
+        sample_rate, samples = wavfile.read(filename=input_file)
+        
+        # Calculate total duration
+        total_duration = len(samples) / sample_rate
+        print(f"Total audio duration: {total_duration:.2f} seconds")
+        
+        # Calculate chunk parameters
+        chunk_samples = int(chunk_duration * sample_rate)
+        overlap_samples = int(overlap * sample_rate)
+        step_samples = chunk_samples - overlap_samples
+        
+        if step_samples <= 0:
+            return {
+                'success': False,
+                'message': f'Overlap ({overlap}s) must be less than chunk duration ({chunk_duration}s)',
+                'output_files': [],
+                'split_count': 0
+            }
+        
+        # Calculate number of chunks
+        if len(samples) <= chunk_samples:
+            # File is shorter than chunk duration
+            chunk_count = 1
+            chunks = [(0, len(samples))]
+        else:
+            chunks = []
+            start = 0
+            chunk_index = 0
+            
+            while start < len(samples):
+                end = min(start + chunk_samples, len(samples))
+                chunks.append((start, end))
+                start += step_samples
+                chunk_index += 1
+                
+                # Break if the remaining audio is too short to be meaningful
+                if len(samples) - start < chunk_samples * 0.1:  # Less than 10% of chunk duration
+                    if end < len(samples):
+                        # Extend the last chunk to include remaining audio
+                        chunks[-1] = (chunks[-1][0], len(samples))
+                    break
+        
+        chunk_count = len(chunks)
+        output_files = []
+        
+        # Write split files
+        for i, (start, end) in enumerate(tqdm(chunks, desc="Writing time-based chunks")):
+            chunk_duration_actual = (end - start) / sample_rate
+            output_file_path = os.path.join(output_dir, f"{output_filename_prefix}_time_{i:03d}.wav")
+            
+            if not dry_run:
+                print(f"Writing chunk {i+1}/{chunk_count}: {output_file_path} ({chunk_duration_actual:.2f}s)")
+                wavfile.write(
+                    filename=output_file_path,
+                    rate=sample_rate,
+                    data=samples[start:end]
+                )
+                output_files.append(output_file_path)
+            else:
+                print(f"Would write chunk {i+1}/{chunk_count}: {output_file_path} ({chunk_duration_actual:.2f}s)")
+                output_files.append(output_file_path)
+        
+        return {
+            'success': True,
+            'message': f'Successfully split {input_file} into {chunk_count} time-based chunks of {chunk_duration}s each.',
+            'output_files': output_files,
+            'split_count': chunk_count,
+            'output_dir': output_dir,
+            'total_duration': total_duration,
+            'chunk_duration': chunk_duration,
+            'overlap': overlap
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'message': f'Error splitting audio file by time: {str(e)}',
+            'output_files': [],
+            'split_count': 0
+        }
+
+
+def quick_split_by_time(input_file, chunk_seconds=30.0):
+    """
+    Convenience function to quickly split audio into time-based chunks.
+    
+    Args:
+        input_file (str): Path to the input WAV file
+        chunk_seconds (float): Duration of each chunk in seconds
+    
+    Returns:
+        dict: Contains success status and list of output files
+    """
+    return split_wav_by_time(
+        input_file=input_file,
+        chunk_duration=chunk_seconds
+    )
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python utils_audio.py <command> <args>")
@@ -372,6 +504,7 @@ if __name__ == "__main__":
         print("  inspect input_file.wav")
         print("  trim input_file.wav number_of_seconds [output_file.wav]")
         print("  split input_file.wav [--output-dir DIR] [--min-silence-length SECONDS] [--silence-threshold THRESHOLD] [--step-duration SECONDS] [--dry-run]")
+        print("  split_time input_file.wav [--chunk-duration SECONDS] [--overlap SECONDS] [--output-dir DIR] [--dry-run]")
         sys.exit(1)
     command = sys.argv[1]
     if command == "convert_m4a":
@@ -489,6 +622,115 @@ if __name__ == "__main__":
         print(result["message"])
         if result["success"]:
             print(f"Split into {result['split_count']} files")
+            if result['output_files']:
+                print("Output files:")
+                for file in result['output_files']:
+                    print(f"  - {file}")
+    elif command == "split_time":
+        if len(sys.argv) < 3:
+            print("Usage: python utils_audio.py split_time input_file.wav [--output-dir DIR] [--chunk-duration SECONDS] [--overlap SECONDS] [--dry-run]")
+            sys.exit(1)
+        
+        input_file = sys.argv[2]
+        
+        # Parse optional arguments
+        output_dir = None
+        chunk_duration = 30.0
+        overlap = 0.0
+        dry_run = False
+        
+        i = 3
+        while i < len(sys.argv):
+            if sys.argv[i] == "--output-dir" and i + 1 < len(sys.argv):
+                output_dir = sys.argv[i + 1]
+                i += 2
+            elif sys.argv[i] == "--chunk-duration" and i + 1 < len(sys.argv):
+                try:
+                    chunk_duration = float(sys.argv[i + 1])
+                except ValueError:
+                    print("--chunk-duration must be a number")
+                    sys.exit(1)
+                i += 2
+            elif sys.argv[i] == "--overlap" and i + 1 < len(sys.argv):
+                try:
+                    overlap = float(sys.argv[i + 1])
+                except ValueError:
+                    print("--overlap must be a number")
+                    sys.exit(1)
+                i += 2
+            elif sys.argv[i] == "--dry-run":
+                dry_run = True
+                i += 1
+            else:
+                print(f"Unknown argument: {sys.argv[i]}")
+                sys.exit(1)
+        
+        result = split_wav_by_time(
+            input_file=input_file,
+            chunk_duration=chunk_duration,
+            output_dir=output_dir,
+            overlap=overlap,
+            dry_run=dry_run
+        )
+        
+        print(result["message"])
+        if result["success"]:
+            print(f"Split into {result['split_count']} chunks")
+            if result['output_files']:
+                print("Output files:")
+                for file in result['output_files']:
+                    print(f"  - {file}")
+    elif command == "split_time":
+        if len(sys.argv) < 3:
+            print("Usage: python utils_audio.py split_time input_file.wav [--chunk-duration SECONDS] [--overlap SECONDS] [--output-dir DIR] [--dry-run]")
+            sys.exit(1)
+        
+        input_file = sys.argv[2]
+        
+        # Parse optional arguments
+        chunk_duration = 30.0
+        overlap = 0.0
+        output_dir = None
+        dry_run = False
+        
+        i = 3
+        while i < len(sys.argv):
+            if sys.argv[i] == "--chunk-duration" and i + 1 < len(sys.argv):
+                try:
+                    chunk_duration = float(sys.argv[i + 1])
+                except ValueError:
+                    print("--chunk-duration must be a number")
+                    sys.exit(1)
+                i += 2
+            elif sys.argv[i] == "--overlap" and i + 1 < len(sys.argv):
+                try:
+                    overlap = float(sys.argv[i + 1])
+                except ValueError:
+                    print("--overlap must be a number")
+                    sys.exit(1)
+                i += 2
+            elif sys.argv[i] == "--output-dir" and i + 1 < len(sys.argv):
+                output_dir = sys.argv[i + 1]
+                i += 2
+            elif sys.argv[i] == "--dry-run":
+                dry_run = True
+                i += 1
+            else:
+                print(f"Unknown argument: {sys.argv[i]}")
+                sys.exit(1)
+        
+        result = split_wav_by_time(
+            input_file=input_file,
+            chunk_duration=chunk_duration,
+            overlap=overlap,
+            output_dir=output_dir,
+            dry_run=dry_run
+        )
+        
+        print(result["message"])
+        if result["success"]:
+            print(f"Split into {result['split_count']} chunks")
+            print(f"Total duration: {result.get('total_duration', 'N/A'):.2f}s")
             if result['output_files']:
                 print("Output files:")
                 for file in result['output_files']:

@@ -8,7 +8,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from utils.audio import split_wav_by_silence, quick_split_audio
+from utils.audio import split_wav_by_silence, quick_split_audio, split_wav_by_time, quick_split_by_time
 
 def test_audio_splitting():
     """Test the audio splitting functionality"""
@@ -48,6 +48,24 @@ def test_audio_splitting():
     print("\n--- Quick Split Test (dry run) ---")
     result2 = quick_split_audio(test_file, silence_duration=1.5, sensitivity=1e-5)
     print(f"Quick split result: {result2['message']}")
+    
+    # Test time-based splitting
+    print("\n--- Time-based Split Test (dry run) ---")
+    result3 = split_wav_by_time(
+        input_file=test_file,
+        chunk_duration=10.0,  # 10-second chunks
+        overlap=1.0,  # 1-second overlap
+        dry_run=True
+    )
+    
+    print(f"Time split success: {result3['success']}")
+    print(f"Time split message: {result3['message']}")
+    print(f"Would create {result3['split_count']} time-based chunks")
+    
+    # Test quick time split
+    print("\n--- Quick Time Split Test (dry run) ---")
+    result4 = quick_split_by_time(test_file, chunk_seconds=15.0)
+    print(f"Quick time split result: {result4['message']}")
 
 if __name__ == "__main__":
     test_audio_splitting()
