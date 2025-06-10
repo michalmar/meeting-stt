@@ -333,7 +333,8 @@ def split_wav_by_silence(input_file,
             'message': f'Successfully split {input_file} into {len(cut_ranges)} files.',
             'output_files': output_files,
             'split_count': len(cut_ranges),
-            'output_dir': output_dir
+            'output_dir': output_dir,
+            'input_file': input_file,
         }
         
     except Exception as e:
@@ -466,7 +467,8 @@ def split_wav_by_time(input_file,
             'output_dir': output_dir,
             'total_duration': total_duration,
             'chunk_duration': chunk_duration,
-            'overlap': overlap
+            'overlap': overlap,
+            'input_file': input_file,
         }
         
     except Exception as e:
@@ -495,6 +497,301 @@ def quick_split_by_time(input_file, chunk_seconds=30.0):
     )
 
 
+def join_wav_by_time(filenames=None,
+                    input_dir=None,
+                    max_duration=600.0, 
+                    output_dir=None, 
+                    output_prefix="joined",
+                    dry_run=False):
+    """
+    Join WAV files from split_wav_by_silence into larger chunks with maximum duration.
+    
+    This function takes individual chunks created by split_wav_by_silence and combines them
+    into larger files that don't exceed the specified maximum duration.
+    
+    Args:
+        filenames (list): List of WAV filenames to join. Takes precedence over input_dir scanning.
+        input_dir (str): Directory containing split WAV files. Used only if filenames is None.
+        max_duration (float): Maximum duration for joined files in seconds. Default: 600.0 (10 minutes)
+        output_dir (str): Output directory for joined files. Defaults to data/split/joined folder
+        output_prefix (str): Prefix for output filenames. Default: "joined"
+        dry_run (bool): If True, don't write files, just return join information. Default: False
+    
+    Returns:
+        dict: Contains success status, message, and list of output files
+    """
+    
+    try:
+        # Handle filenames parameter
+        if filenames is not None:
+            if not isinstance(filenames, list):
+                return {
+                    'success': False,
+                    'message': 'filenames parameter must be a list of file paths',
+                    'output_files': [],
+                    'join_count': 0
+                }
+            
+            if not filenames:
+                return {
+                    'success': False,
+                    'message': 'filenames list is empty',
+                    'output_files': [],
+                    'join_count': 0
+                }
+            
+            # Convert to full paths and validate files exist
+            wav_file_paths = []
+            for filename in filenames:
+                if os.path.isfile(filename):
+                    wav_file_paths.append(filename)
+                else:
+                    print(f"Warning: File not found: {filename}")
+            
+            if not wav_file_paths:
+                return {
+                    'success': False,
+                    'message': 'No valid files found in the provided filenames list',
+                    'output_files': [],
+                    'join_count': 0
+                }
+            
+            # Set default output directory based on first file's directory if not specified
+            if output_dir is None:
+                first_file_dir = os.path.dirname(wav_file_paths[0])
+                if first_file_dir:
+                    output_dir = os.path.join(first_file_dir, 'joined')
+                else:
+                    output_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'split', 'joined')
+        else:
+            # Original directory scanning logic
+            # Set default input directory to data/split
+            if input_dir is None:
+                input_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'split')
+            
+            # Set default output directory to data/split/joined
+            if output_dir is None:
+                output_dir = os.path.join(input_dir, 'joined')
+            
+            # Find all WAV files in input directory (exclude time-based splits and joined files)
+            wav_files = []
+            for filename in os.listdir(input_dir):
+                if (filename.lower().endswith('.wav') and 
+                    not filename.startswith('joined_') and 
+                    '_time_' not in filename and
+                    os.path.isfile(os.path.join(input_dir, filename))):
+                    wav_files.append(filename)
+            
+            if not wav_files:
+                return {
+                    'success': False,
+                    'message': f'No suitable WAV files found in {input_dir}',
+                    'output_files': [],
+                    'join_count': 0
+                }
+            
+            # Convert to full paths
+            wav_file_paths = [os.path.join(input_dir, filename) for filename in wav_files]
+        
+        # Ensure output directory exists
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Sort files by name to maintain order (assuming split files are numbered)
+        wav_file_paths.sort()
+        
+        print(f"Found {len(wav_file_paths)} WAV files to join")
+        print(f"Maximum duration per joined file: {max_duration} seconds")
+        
+        # Group files by their base name (before the _xxx.wav part)
+        file_groups = {}
+        for filepath in wav_file_paths:
+            filename = os.path.basename(filepath)
+            # Extract base name (everything before the last _xxx.wav pattern)
+            base_match = filename.rsplit('_', 1)[0] if '_' in filename else filename.rsplit('.', 1)[0]
+            if base_match not in file_groups:
+                file_groups[base_match] = []
+            file_groups[base_match].append(filepath)
+        
+        # Sort files within each group
+        for base_name in file_groups:
+            file_groups[base_name].sort()
+        
+        output_files = []
+        total_joined_files = 0
+        
+        # Process each group separately
+        for base_name, file_paths in file_groups.items():
+            print(f"\nProcessing group: {base_name} ({len(file_paths)} files)")
+            
+            current_group = []
+            current_duration = 0.0
+            group_index = 0
+            
+            for filepath in tqdm(file_paths, desc=f"Processing {base_name}"):
+                
+                # Get duration of current file
+                try:
+                    sample_rate, samples = wavfile.read(filepath)
+                    file_duration = len(samples) / sample_rate
+                except Exception as e:
+                    print(f"Warning: Could not read {os.path.basename(filepath)}: {e}")
+                    continue
+                
+                # Check if adding this file would exceed max duration
+                if current_group and (current_duration + file_duration) > max_duration:
+                    # Save current group and start a new one
+                    if current_group:
+                        output_filename = f"{output_prefix}_{base_name}_{group_index:03d}.wav"
+                        output_path = os.path.join(output_dir, output_filename)
+                        
+                        if not dry_run:
+                            join_result = _join_wav_files(current_group, output_path)
+                            if join_result['success']:
+                                output_files.append(output_path)
+                                total_joined_files += 1
+                                print(f"Created: {output_filename} ({current_duration:.2f}s from {len(current_group)} files)")
+                            else:
+                                print(f"Error creating {output_filename}: {join_result['message']}")
+                        else:
+                            output_files.append(output_path)
+                            total_joined_files += 1
+                            print(f"Would create: {output_filename} ({current_duration:.2f}s from {len(current_group)} files)")
+                        
+                        group_index += 1
+                    
+                    # Start new group with current file
+                    current_group = [filepath]
+                    current_duration = file_duration
+                else:
+                    # Add file to current group
+                    current_group.append(filepath)
+                    current_duration += file_duration
+            
+            # Handle the last group if it has files
+            if current_group:
+                output_filename = f"{output_prefix}_{base_name}_{group_index:03d}.wav"
+                output_path = os.path.join(output_dir, output_filename)
+                
+                if not dry_run:
+                    join_result = _join_wav_files(current_group, output_path)
+                    if join_result['success']:
+                        output_files.append(output_path)
+                        total_joined_files += 1
+                        print(f"Created: {output_filename} ({current_duration:.2f}s from {len(current_group)} files)")
+                    else:
+                        print(f"Error creating {output_filename}: {join_result['message']}")
+                else:
+                    output_files.append(output_path)
+                    total_joined_files += 1
+                    print(f"Would create: {output_filename} ({current_duration:.2f}s from {len(current_group)} files)")
+        
+        return {
+            'success': True,
+            'message': f'Successfully joined {len(wav_file_paths)} files into {total_joined_files} larger files.',
+            'output_files': output_files,
+            'join_count': total_joined_files,
+            'output_dir': output_dir,
+            'max_duration': max_duration,
+            'input_files_processed': len(wav_file_paths)
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'message': f'Error joining audio files: {str(e)}',
+            'output_files': [],
+            'join_count': 0
+        }
+
+
+def _join_wav_files(file_paths, output_path):
+    """
+    Helper function to join multiple WAV files into a single file.
+    
+    Args:
+        file_paths (list): List of WAV file paths to join
+        output_path (str): Path for the output joined file
+    
+    Returns:
+        dict: Success status and message
+    """
+    try:
+        if not file_paths:
+            return {'success': False, 'message': 'No files to join'}
+        
+        # Read the first file to get audio properties
+        sample_rate, first_samples = wavfile.read(file_paths[0])
+        
+        # Start with the first file's samples
+        joined_samples = first_samples.copy()
+        
+        # Append subsequent files
+        for file_path in file_paths[1:]:
+            try:
+                rate, samples = wavfile.read(file_path)
+                if rate != sample_rate:
+                    return {
+                        'success': False, 
+                        'message': f'Sample rate mismatch: {rate} vs {sample_rate} in {file_path}'
+                    }
+                joined_samples = np.concatenate([joined_samples, samples])
+            except Exception as e:
+                return {
+                    'success': False,
+                    'message': f'Error reading {file_path}: {str(e)}'
+                }
+        
+        # Write the joined audio
+        wavfile.write(output_path, sample_rate, joined_samples)
+        
+        return {
+            'success': True,
+            'message': f'Successfully joined {len(file_paths)} files into {output_path}'
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'message': f'Error joining files: {str(e)}'
+        }
+
+
+def quick_join_by_time(input_dir=None, max_minutes=10.0):
+    """
+    Convenience function to quickly join split audio files from a directory.
+    
+    Args:
+        input_dir (str): Directory containing split WAV files
+        max_minutes (float): Maximum duration for joined files in minutes
+    
+    Returns:
+        dict: Contains success status and list of output files
+    """
+    return join_wav_by_time(
+        input_dir=input_dir,
+        max_duration=max_minutes * 60.0
+    )
+
+
+def quick_join_filenames(filenames, max_minutes=10.0, output_prefix="joined"):
+    """
+    Convenience function to quickly join specific audio files by their filenames.
+    
+    Args:
+        filenames (list): List of WAV file paths to join
+        max_minutes (float): Maximum duration for joined files in minutes
+        output_prefix (str): Prefix for output filenames
+    
+    Returns:
+        dict: Contains success status and list of output files
+    """
+    return join_wav_by_time(
+        filenames=filenames,
+        max_duration=max_minutes * 60.0,
+        output_prefix=output_prefix
+    )
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python utils_audio.py <command> <args>")
@@ -505,6 +802,8 @@ if __name__ == "__main__":
         print("  trim input_file.wav number_of_seconds [output_file.wav]")
         print("  split input_file.wav [--output-dir DIR] [--min-silence-length SECONDS] [--silence-threshold THRESHOLD] [--step-duration SECONDS] [--dry-run]")
         print("  split_time input_file.wav [--chunk-duration SECONDS] [--overlap SECONDS] [--output-dir DIR] [--dry-run]")
+        print("  join_time [--input-dir DIR] [--files FILE1,FILE2,...] [--max-duration SECONDS] [--output-dir DIR] [--output-prefix PREFIX] [--dry-run]")
+        print("  join_wav_by_time [input_dir] [max_duration] [output_dir] [output_prefix] [dry_run]")
         sys.exit(1)
     command = sys.argv[1]
     if command == "convert_m4a":
@@ -680,37 +979,58 @@ if __name__ == "__main__":
                 print("Output files:")
                 for file in result['output_files']:
                     print(f"  - {file}")
-    elif command == "split_time":
-        if len(sys.argv) < 3:
-            print("Usage: python utils_audio.py split_time input_file.wav [--chunk-duration SECONDS] [--overlap SECONDS] [--output-dir DIR] [--dry-run]")
-            sys.exit(1)
+    elif command == "join_wav_by_time":
+        input_dir = sys.argv[2] if len(sys.argv) > 2 else None
+        max_duration = float(sys.argv[3]) if len(sys.argv) > 3 else 600.0
+        output_dir = sys.argv[4] if len(sys.argv) > 4 else None
+        output_prefix = sys.argv[5] if len(sys.argv) > 5 else "joined"
+        dry_run = "--dry-run" in sys.argv
         
-        input_file = sys.argv[2]
+        result = join_wav_by_time(
+            input_dir=input_dir,
+            max_duration=max_duration,
+            output_dir=output_dir,
+            output_prefix=output_prefix,
+            dry_run=dry_run
+        )
         
+        print(result["message"])
+        if result["success"]:
+            print(f"Joined into {result['join_count']} files")
+            if result['output_files']:
+                print("Output files:")
+                for file in result['output_files']:
+                    print(f"  - {file}")
+    elif command == "join_time":
         # Parse optional arguments
-        chunk_duration = 30.0
-        overlap = 0.0
+        input_dir = None
+        filenames = None
+        max_duration = 600.0
         output_dir = None
+        output_prefix = "joined"
         dry_run = False
         
-        i = 3
+        i = 2
         while i < len(sys.argv):
-            if sys.argv[i] == "--chunk-duration" and i + 1 < len(sys.argv):
-                try:
-                    chunk_duration = float(sys.argv[i + 1])
-                except ValueError:
-                    print("--chunk-duration must be a number")
-                    sys.exit(1)
+            if sys.argv[i] == "--input-dir" and i + 1 < len(sys.argv):
+                input_dir = sys.argv[i + 1]
                 i += 2
-            elif sys.argv[i] == "--overlap" and i + 1 < len(sys.argv):
+            elif sys.argv[i] == "--files" and i + 1 < len(sys.argv):
+                # Parse comma-separated file list
+                filenames = [f.strip() for f in sys.argv[i + 1].split(',') if f.strip()]
+                i += 2
+            elif sys.argv[i] == "--max-duration" and i + 1 < len(sys.argv):
                 try:
-                    overlap = float(sys.argv[i + 1])
+                    max_duration = float(sys.argv[i + 1])
                 except ValueError:
-                    print("--overlap must be a number")
+                    print("--max-duration must be a number")
                     sys.exit(1)
                 i += 2
             elif sys.argv[i] == "--output-dir" and i + 1 < len(sys.argv):
                 output_dir = sys.argv[i + 1]
+                i += 2
+            elif sys.argv[i] == "--output-prefix" and i + 1 < len(sys.argv):
+                output_prefix = sys.argv[i + 1]
                 i += 2
             elif sys.argv[i] == "--dry-run":
                 dry_run = True
@@ -719,18 +1039,19 @@ if __name__ == "__main__":
                 print(f"Unknown argument: {sys.argv[i]}")
                 sys.exit(1)
         
-        result = split_wav_by_time(
-            input_file=input_file,
-            chunk_duration=chunk_duration,
-            overlap=overlap,
+        result = join_wav_by_time(
+            filenames=filenames,
+            input_dir=input_dir,
+            max_duration=max_duration,
             output_dir=output_dir,
+            output_prefix=output_prefix,
             dry_run=dry_run
         )
         
         print(result["message"])
         if result["success"]:
-            print(f"Split into {result['split_count']} chunks")
-            print(f"Total duration: {result.get('total_duration', 'N/A'):.2f}s")
+            print(f"Joined {result['input_files_processed']} files into {result['join_count']} larger files")
+            print(f"Max duration per file: {result['max_duration']}s")
             if result['output_files']:
                 print("Output files:")
                 for file in result['output_files']:
