@@ -500,9 +500,8 @@ class TranscriptionFactory:
         completion = client.chat.completions.create(
             model="gpt-4o-audio-preview",
             messages=messages,
-            max_tokens=5000,
-            temperature=0.2,
-            top_p=1,
+            max_tokens=15000,
+            temperature=0.0,
             frequency_penalty=0,
             presence_penalty=0,
             stop=None,
@@ -512,6 +511,10 @@ class TranscriptionFactory:
 
         transcription_text = completion.choices[0].message.content
         logger.info(f"Transcription result: {transcription_text}")
+
+        #save the transcription result to a file
+        with open("transcription_results_TEST.txt", "w") as f:
+            f.write(transcription_text)
 
         # Parse the JSON array returned by the LLM, handling markdown code blocks if present
         import re
@@ -589,5 +592,10 @@ if __name__ == "__main__":
     # backend/data/test-transcription-cz.wav
     
     # LLM
-    factory.conversationfilename = "../data/test-transcription-cz.wav"
+    # factory.conversationfilename = "../data/test-transcription-cz.wav"
+    # factory.conversationfilename = "./data/STT - test - EN - banking - mid.wav"
+    # factory.conversationfilename = "./data/STT - test - UA - banking - mid.wav"
+    # factory.conversationfilename = "./data/STT - test - UA - banking - long.wav"
+    # factory.conversationfilename = "./data/STT - test - EN - banking - long.wav"
+    factory.conversationfilename = "./data/STT - test - EN - banking - long (1).wav"
     factory.conversation_transcription_llm(cback)
