@@ -197,3 +197,5 @@ output MODEL_NAME string = backend.outputs.azureOpenaiDeploymentName
 output AZURE_OPENAI_ENDPOINT_TRANSCRIBE string = backend.outputs.azureOpenaiTranscribeEndpoint
 output AZURE_OPENAI_DEPLOYMENT_NAME_TRANSCRIBE string = backend.outputs.azureOpenaiTranscribeDeploymentName
 
+output AZURE_STORAGE_ACCOUNT_KEY string = backend.outputs.storageAccountKey
+output AZURE_STORAGE_ACCOUNT_NAME string = backend.outputs.storageAccountName

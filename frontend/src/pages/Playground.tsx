@@ -719,10 +719,24 @@ export default function App() {
                       </div>
                     )}
                     <form className="space-y-6" onSubmit={handleTranscriptionSubmit}>
+                      {/* Model selection */}
+                      <div>
+                        <Label htmlFor="model" className="mb-2 block">Model selection:</Label>
+                        <Select value={model} onValueChange={setModel}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select model" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="msft">Microsoft</SelectItem>
+                            <SelectItem value="llm">LLM</SelectItem>
+                            <SelectItem value="whisper">Whisper</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                       {/* Language select */}
                       <div>
                         <Label htmlFor="language" className="mb-2 block">Language:</Label>
-                        <Select value={language} onValueChange={setLanguage}>
+                        <Select value={language} onValueChange={setLanguage} disabled={model !== 'msft'}>
                           <SelectTrigger className="w-full">
                             <SelectValue placeholder="Select language" />
                           </SelectTrigger>
@@ -735,21 +749,8 @@ export default function App() {
                           </SelectContent>
                         </Select>
                       </div>
-                      {/* Model selection */}
-                      <div>
-                        <Label htmlFor="model" className="mb-2 block">Model selection:</Label>
-                        <Select value={model} onValueChange={setModel}>
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select model" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="msft">Microsoft</SelectItem>
-                            <SelectItem value="llm">LLM</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      {/* Temperature slider */}
-                      <div>
+                      {/* Temperature slider - DISABLED */}
+                      {/* <div>
                         <Label htmlFor="temperature" className="mb-2 block">Temperature: <span className="font-mono">{temperature.toFixed(2)}</span></Label>
                         <Slider
                           id="temperature"
@@ -759,25 +760,25 @@ export default function App() {
                           value={[temperature]}
                           onValueChange={([val]) => setTemperature(val)}
                         />
-                      </div>
-                      {/* Diarization switch */}
-                      <div className="flex items-center space-x-2">
+                      </div> */}
+                      {/* Diarization switch - DISABLED */}
+                      {/* <div className="flex items-center space-x-2">
                         <Switch
                           id="diarization"
                           checked={diarization}
                           onCheckedChange={setDiarization}
                         />
                         <Label htmlFor="diarization">Diarization</Label>
-                      </div>
-                      {/* Combine switch */}
-                      <div className="flex items-center space-x-2">
+                      </div> */}
+                      {/* Combine switch - DISABLED */}
+                      {/* <div className="flex items-center space-x-2">
                         <Switch
                           id="combine"
                           checked={combine}
                           onCheckedChange={setCombine}
                         />
                         <Label htmlFor="combine">Combine</Label>
-                      </div>
+                      </div> */}
                       {/* Submit button */}
                       <div>
                         <Button type="submit" variant="default" disabled={isProcessing}>

@@ -484,3 +484,7 @@ output azureOpenaiDeploymentName string = openaideployment.name
 
 output azureOpenaiTranscribeDeploymentName string = openaiTranscribeDeployment.name
 output azureOpenaiTranscribeEndpoint string = openaiTranscribe.properties.endpoint
+
+output storageAccountName string = storageAcct.name
+#disable-next-line outputs-should-not-contain-secrets
+output storageAccountKey string = storageAcct.listKeys().keys[0].value
