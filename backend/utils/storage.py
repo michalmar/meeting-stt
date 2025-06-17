@@ -45,7 +45,6 @@ class StorageFactory:
         if not self.account_url or not self.container_name:
             raise ValueError("Both account_url and container_name must be provided or set in environment variables.")
         self.credential = DefaultAzureCredential()
-        logger.info(f"Using DefaultAzureCredential {self.credential}.")
         self.service_client = BlobServiceClient(account_url=self.account_url, credential=self.credential)
         self.container_client = self.service_client.get_container_client(self.container_name)
 

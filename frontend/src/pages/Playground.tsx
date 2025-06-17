@@ -47,7 +47,7 @@ import { ModeToggle } from '@/components/mode-toggle'
 import { Input } from '@/components/ui/input';
 import { useCallback } from 'react';
 import { Button } from '@/components/ui/button'
-import { Slider } from '@/components/ui/slider'
+// import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { 
@@ -312,6 +312,11 @@ export default function App() {
     try {
       let allResultsCombined: any[] = [];
       let groupedResults: Record<string, any[]> = {};
+
+      // these values are not used in the backend, but we reset them to defaults
+      setTemperature(0.5); // Reset temperature to default
+      setDiarization(true); // Reset diarization to default
+      setCombine(false); // Reset combine to default
 
       for (const file of uploadedFiles) {
         const formData = new FormData();

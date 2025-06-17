@@ -362,7 +362,8 @@ class TranscriptionBatchFactory:
         model_url = f"https://{self.speech_region}.api.cognitive.microsoft.com/speechtotext/models/base/{model_id}"
 
         # Configure transcription properties
-        locale = "cs-cz"  # Czech locale - could be parameterized
+        # locale = "cs-cz"  # Czech locale - could be parameterized
+        locale = "uk-ua"  # Ukrainian locale - could be parameterized
         content_urls = [content_url]
         properties = {
             "wordLevelTimestampsEnabled": False,
@@ -374,7 +375,7 @@ class TranscriptionBatchFactory:
                 "candidateLocales": [
                     "uk-ua",
                     "ru-ru",
-                    "cs-cz"
+                    # "cs-cz"
                 ]
             },
         }

@@ -285,6 +285,14 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
               name: 'AZURE_OPENAI_DEPLOYMENT_NAME_TRANSCRIBE'
               value: azureOpenaiTranscribeDeploymentName
             }
+            {
+              name: 'AZURE_STORAGE_ACCOUNT_NAME'
+              value: storageAcct.name
+            }
+            {
+              name: 'AZURE_STORAGE_ACCOUNT_KEY'
+              value: storageAcct.listKeys().keys[0].value
+            }
             
           ],
           env,
@@ -361,7 +369,7 @@ resource appOpenaiRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-0
   }
 }
 
-resource openaiTranscribe 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
+resource openaiTranscribe 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = {
   name: azureOpenaiTranscribeResourceName
   location: 'swedencentral'
   sku: {
@@ -373,7 +381,7 @@ resource openaiTranscribe 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
   }
 }
 
-resource openaiTranscribeDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
+resource openaiTranscribeDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-preview' = {
   name: azureOpenaiTranscribeDeploymentName
   parent: openaiTranscribe
   sku: {
@@ -389,6 +397,27 @@ resource openaiTranscribeDeployment 'Microsoft.CognitiveServices/accounts/deploy
     versionUpgradeOption: 'OnceCurrentVersionExpired'
   }
 }
+
+resource openaiTranscriberWhisper 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-preview' = {
+  parent: openaiTranscribe
+  name: 'whisper'
+  sku: {
+    name: 'Standard'
+    capacity: 3
+  }
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: 'whisper'
+      version: '001'
+    }
+    versionUpgradeOption: 'OnceNewDefaultVersionAvailable'
+  }
+  dependsOn: [
+    openaiTranscribeDeployment
+  ]
+}
+
 
 // Grant Cognitive Services User role to user for the transcribe OpenAI resource
 resource userOpenaiTranscribeRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
@@ -453,6 +482,16 @@ resource storageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-
   scope: storageAcct
   properties: {
     principalId: speech.identity.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+  }
+}
+
+resource storageRoleAssignmentApp 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAcct.id, identity.id, 'Storage Blob Data Contributor2')
+  scope: storageAcct
+  properties: {
+    principalId: identity.properties.principalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
   }

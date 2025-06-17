@@ -495,10 +495,10 @@ class TranscriptionFactory:
             }
         ]
         messages = chat_prompt
-
-        logger.info("Sending for transcription.")
+        transcription_model = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME_TRANSCRIBE", "gpt-4o-audio-preview")
+        logger.info(f"Sending for transcription with {transcription_model} model.")
         completion = client.chat.completions.create(
-            model="gpt-4o-audio-preview",
+            model=transcription_model,
             messages=messages,
             max_tokens=15000,
             temperature=0.0,
