@@ -416,8 +416,8 @@ class TranscriptionBatchFactory:
             transcription_object = {
                 "event_type": "transcribed",
                 "session": transcription_id,
-                "offset": phrase["offsetMilliseconds"],
-                "duration": phrase.get("durationMilliseconds", 0),
+                "offset": phrase["offsetInTicks"],
+                "duration": phrase.get("durationInTicks", 0),
                 "text": phrase.get("text"),
                 "speaker_id": phrase.get("person"),
                 "result_id": None,

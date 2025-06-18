@@ -350,24 +350,24 @@ resource openaideployment 'Microsoft.CognitiveServices/accounts/deployments@2024
 }
 
 
-resource userOpenaiRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(openai.id, userPrincipalId, 'Cognitive Services OpenAI User')
-  scope: openai
-  properties: {
-    principalId: userPrincipalId
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
-  }
-} 
+// resource userOpenaiRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+//   name: guid(openai.id, userPrincipalId, 'Cognitive Services OpenAI User')
+//   scope: openai
+//   properties: {
+//     principalId: userPrincipalId
+//     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+//   }
+// } 
 
-resource appOpenaiRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(openai.id, identity.id, 'Cognitive Services OpenAI User')
-  scope: openai
-  properties: {
-    principalId: identity.properties.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
-  }
-}
+// resource appOpenaiRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+//   name: guid(openai.id, identity.id, 'Cognitive Services OpenAI User')
+//   scope: openai
+//   properties: {
+//     principalId: identity.properties.principalId
+//     principalType: 'ServicePrincipal'
+//     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+//   }
+// }
 
 resource openaiTranscribe 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = {
   name: azureOpenaiTranscribeResourceName
@@ -419,26 +419,26 @@ resource openaiTranscriberWhisper 'Microsoft.CognitiveServices/accounts/deployme
 }
 
 
-// Grant Cognitive Services User role to user for the transcribe OpenAI resource
-resource userOpenaiTranscribeRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(openaiTranscribe.id, userPrincipalId, 'Cognitive Services OpenAI User')
-  scope: openaiTranscribe
-  properties: {
-    principalId: userPrincipalId
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
-  }
-}
+// // Grant Cognitive Services User role to user for the transcribe OpenAI resource
+// resource userOpenaiTranscribeRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+//   name: guid(openaiTranscribe.id, userPrincipalId, 'Cognitive Services OpenAI User')
+//   scope: openaiTranscribe
+//   properties: {
+//     principalId: userPrincipalId
+//     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+//   }
+// }
 
-// Grant Cognitive Services User role to app managed identity for the transcribe OpenAI resource
-resource appOpenaiTranscribeRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(openaiTranscribe.id, identity.id, 'Cognitive Services OpenAI User')
-  scope: openaiTranscribe
-  properties: {
-    principalId: identity.properties.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
-  }
-}
+// // Grant Cognitive Services User role to app managed identity for the transcribe OpenAI resource
+// resource appOpenaiTranscribeRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+//   name: guid(openaiTranscribe.id, identity.id, 'Cognitive Services OpenAI User')
+//   scope: openaiTranscribe
+//   properties: {
+//     principalId: identity.properties.principalId
+//     principalType: 'ServicePrincipal'
+//     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+//   }
+// }
 
 resource speech 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
   name: speechServiceName
@@ -456,55 +456,55 @@ resource speech 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
   }
 }
 
-// Grant Cognitive Services User role to user
-resource userSpeechRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(speech.id, userPrincipalId, 'Cognitive Services Speech User')
-  scope: speech
-  properties: {
-    principalId: userPrincipalId
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'f2dc8367-1007-4938-bd23-fe263f013447')
-  }
-}
+// // Grant Cognitive Services User role to user
+// resource userSpeechRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+//   name: guid(speech.id, userPrincipalId, 'Cognitive Services Speech User')
+//   scope: speech
+//   properties: {
+//     principalId: userPrincipalId
+//     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'f2dc8367-1007-4938-bd23-fe263f013447')
+//   }
+// }
 
-// Grant Cognitive Services User role to app managed identity
-resource appSpeechRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(speech.id, identity.id, 'Cognitive Services Speech User')
-  scope: speech
-  properties: {
-    principalId: identity.properties.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'f2dc8367-1007-4938-bd23-fe263f013447')
-  }
-}
+// // Grant Cognitive Services User role to app managed identity
+// resource appSpeechRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+//   name: guid(speech.id, identity.id, 'Cognitive Services Speech User')
+//   scope: speech
+//   properties: {
+//     principalId: identity.properties.principalId
+//     principalType: 'ServicePrincipal'
+//     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'f2dc8367-1007-4938-bd23-fe263f013447')
+//   }
+// }
 
-resource storageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAcct.id, identity.id, 'Storage Blob Data Contributor')
-  scope: storageAcct
-  properties: {
-    principalId: speech.identity.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
-  }
-}
+// resource storageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+//   name: guid(storageAcct.id, identity.id, 'Storage Blob Data Contributor for Speech')
+//   scope: storageAcct
+//   properties: {
+//     principalId: speech.identity.principalId
+//     principalType: 'ServicePrincipal'
+//     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+//   }
+// }
 
-resource storageRoleAssignmentApp 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAcct.id, identity.id, 'Storage Blob Data Contributor2')
-  scope: storageAcct
-  properties: {
-    principalId: identity.properties.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
-  }
-}
+// resource storageRoleAssignmentApp 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+//   name: guid(storageAcct.id, identity.id, 'Storage Blob Data Contributor for App')
+//   scope: storageAcct
+//   properties: {
+//     principalId: identity.properties.principalId
+//     principalType: 'ServicePrincipal'
+//     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+//   }
+// }
 
-resource userStorageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAcct.id, userPrincipalId, 'Storage Blob Data Contributor')
-  scope: storageAcct
-  properties: {
-    principalId: userPrincipalId
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
-  }
-}
+// resource userStorageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+//   name: guid(storageAcct.id, userPrincipalId, 'Storage Blob Data Contributor for User')
+//   scope: storageAcct
+//   properties: {
+//     principalId: userPrincipalId
+//     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+//   }
+// }
 
 
 output defaultDomain string = containerAppsEnvironment.properties.defaultDomain
