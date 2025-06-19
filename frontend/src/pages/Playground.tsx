@@ -360,9 +360,9 @@ export default function App() {
                   if (cleanFilename && cleanFilename.includes('/')) {
                     cleanFilename = cleanFilename.split('/').pop();
                   }
-                  if (cleanFilename && cleanFilename.startsWith('upload_')) {
-                    cleanFilename = cleanFilename.substring(7);
-                  }
+                  // if (cleanFilename && cleanFilename.startsWith('upload_')) {
+                  //   cleanFilename = cleanFilename.substring(7);
+                  // }
 
                   const resultItem = {
                     filename: cleanFilename || file.filename,

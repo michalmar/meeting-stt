@@ -248,7 +248,7 @@ async def submit_transcription(
         else:
             raise HTTPException(status_code=400, detail="Unsupported audio format")
         
-        if model == "llm" or model == "msft":
+        if model == "msft":
             
             # After conversion to wav, check if stereo and convert to mono if needed
             from utils.audio import convert_stereo_wav_to_mono
@@ -262,6 +262,21 @@ async def submit_transcription(
                 inspection_info = inspect_wav(temp_path)
                 logger.info(f"Audio inspection info after mono conversion: {inspection_info}")
 
+
+            # Prepare the transcription factory with the saved file path
+            factory = TranscriptionFactory(
+                conversationfilename=temp_path,
+                language=language,
+                channels=int(inspection_info["channels"]),
+                bits_per_sample=int(inspection_info["bits_per_sample"]),
+                samples_per_second=int(inspection_info["samples_per_second"]),
+            )
+            logger.info("TranscriptionFactory initialized successfully.")
+        elif model == "llm":
+            
+            inspection_info = inspect_wav(temp_path)
+            logger.info(f"Audio inspection info for LLM: {inspection_info}")
+        
 
             # Prepare the transcription factory with the saved file path
             factory = TranscriptionFactory(
@@ -301,7 +316,7 @@ async def submit_transcription(
             import threading
             if model == "llm":
                 logger.info("Starting LLM transcription.")
-                t = threading.Thread(target=factory.conversation_transcription_llm, kwargs={"callback": callback})
+                t = threading.Thread(target=factory.conversation_transcription_llm_advanced, kwargs={"callback": callback})
             elif model == "whisper":
                 logger.info("Starting Whisper transcription with batch factory.")
                 if blob_url:

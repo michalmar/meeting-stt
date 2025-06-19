@@ -353,8 +353,8 @@ class TranscriptionBatchFactory:
         start_time = time.time()
 
         file_name = self._extract_filename(content_url)
-        
-        display_name = f"Transcription for {file_name}"
+        random_suffix = str(int(time.time() * 1000))  # Unique suffix based on current time
+        display_name = f"Transcription for {file_name} - {random_suffix}"
         description = "Speech Studio Batch speech to text"
         
         # Dynamically get model IDs
@@ -366,11 +366,12 @@ class TranscriptionBatchFactory:
         locale = "uk-ua"  # Ukrainian locale - could be parameterized
         content_urls = [content_url]
         properties = {
+            "displayName": display_name,
             "wordLevelTimestampsEnabled": False,
             "displayFormWordLevelTimestampsEnabled": True,
             "diarizationEnabled": False,
             "punctuationMode": "DictatedAndAutomatic",
-            "profanityFilterMode": "Masked",
+            "profanityFilterMode": "None",
             "languageIdentification": {
                 "candidateLocales": [
                     "uk-ua",
@@ -422,7 +423,7 @@ class TranscriptionBatchFactory:
                 "speaker_id": phrase.get("person"),
                 "result_id": None,
                 "filename": file_name,
-                "language": phrase.get("language"),
+                "language": phrase.get("locale"),
             }
             if callback:
                 callback(transcription_object)

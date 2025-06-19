@@ -195,6 +195,76 @@ def convert_stereo_wav_to_mono(input_path, output_path=None):
             "message": f"Error converting stereo WAV to mono: {e}"
         }
 
+def extract_audio_channels(input_path, left_output_path=None, right_output_path=None):
+    """
+    Extracts left and right channels from a stereo WAV file into separate mono files.
+    
+    Args:
+        input_path (str): Path to the input stereo WAV file
+        left_output_path (str, optional): Path for the left channel output. 
+                                        If not provided, uses input_path with '_left' suffix
+        right_output_path (str, optional): Path for the right channel output.
+                                         If not provided, uses input_path with '_right' suffix
+    
+    Returns:
+        dict: Contains success status, message, and output paths for both channels
+    """
+    try:
+        # Load the audio file
+        audio = AudioSegment.from_wav(input_path)
+        
+        # Check if the audio is stereo
+        if audio.channels == 1:
+            return {
+                "input": input_path,
+                "left_output": None,
+                "right_output": None,
+                "success": False,
+                "message": f"'{input_path}' is mono (1 channel). Cannot extract left/right channels."
+            }
+        
+        if audio.channels > 2:
+            return {
+                "input": input_path,
+                "left_output": None,
+                "right_output": None,
+                "success": False,
+                "message": f"'{input_path}' has {audio.channels} channels. This function only supports stereo (2 channels)."
+            }
+        
+        # Generate output paths if not provided
+        if left_output_path is None:
+            base_name = os.path.splitext(input_path)[0]
+            left_output_path = f"{base_name}_left.wav"
+        
+        if right_output_path is None:
+            base_name = os.path.splitext(input_path)[0]
+            right_output_path = f"{base_name}_right.wav"
+        
+        # Extract left channel (channel 0)
+        left_channel = audio.split_to_mono()[0]
+        left_channel.export(left_output_path, format="wav")
+        
+        # Extract right channel (channel 1)
+        right_channel = audio.split_to_mono()[1]
+        right_channel.export(right_output_path, format="wav")
+        
+        return {
+            "input": input_path,
+            "left_output": left_output_path,
+            "right_output": right_output_path,
+            "success": True,
+            "message": f"Successfully extracted channels from '{input_path}'. Left: '{left_output_path}', Right: '{right_output_path}'"
+        }
+        
+    except Exception as e:
+        return {
+            "input": input_path,
+            "left_output": left_output_path,
+            "right_output": right_output_path,
+            "success": False,
+            "message": f"Error extracting audio channels: {e}"
+        }
 def split_wav_by_silence(input_file, 
                         output_dir=None, 
                         min_silence_length=3.0, 
@@ -610,7 +680,7 @@ def join_wav_by_time(filenames=None,
             base_match = filename.rsplit('_', 1)[0] if '_' in filename else filename.rsplit('.', 1)[0]
             if base_match not in file_groups:
                 file_groups[base_match] = []
-            file_groups[base_match].append(filepath)
+            file_groups[base_name].append(filepath)
         
         # Sort files within each group
         for base_name in file_groups:

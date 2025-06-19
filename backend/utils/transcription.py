@@ -569,6 +569,287 @@ class TranscriptionFactory:
         if callback:
             callback({"event_type": "session_stopped", "filename": self.conversationfilename})
 
+    def conversation_transcription_llm_advanced(self, callback=None):
+        """
+        Advanced transcription that splits audio into left/right channels, transcribes each separately,
+        then combines them using LLM with combine prompt for better conversation flow.
+        """
+        logger = logging.getLogger(__name__)
+        logger.info("Starting advanced LLM-based conversation transcription with channel separation.")
+        
+        import base64
+        from openai import AzureOpenAI
+        import json
+        import os
+        import tempfile
+        from pathlib import Path
+        
+        # Import the audio channel extraction function
+        import sys
+        sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+        from utils.audio import extract_audio_channels
+        
+        # Initialize Azure OpenAI client
+        # api_key = os.getenv("AZURE_OPENAI_KEY_TRANSCRIBE")
+        api_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+        api_endpoint_transcribe = os.getenv("AZURE_OPENAI_ENDPOINT_TRANSCRIBE")
+
+        token_provider = get_bearer_token_provider(
+            DefaultAzureCredential(),
+            "https://cognitiveservices.azure.com/.default"
+        )
+
+        client = AzureOpenAI(
+            azure_endpoint=api_endpoint,
+            azure_ad_token_provider=token_provider,
+            api_version="2025-01-01-preview",
+        )
+        client_transcribe = AzureOpenAI(
+            azure_endpoint=api_endpoint_transcribe,
+            azure_ad_token_provider=token_provider,
+            api_version="2025-01-01-preview",
+        )
+        logger.info("Initiated LLM client.")
+
+        # Step 1: Split audio into left and right channels
+        logger.info("Step 1: Splitting audio into left and right channels...")
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            left_channel_path = os.path.join(temp_dir, "left_channel.wav")
+            right_channel_path = os.path.join(temp_dir, "right_channel.wav")
+            
+            # Extract channels
+            channel_result = extract_audio_channels(
+                self.conversationfilename,
+                left_output_path=left_channel_path,
+                right_output_path=right_channel_path
+            )
+            
+            if not channel_result["success"]:
+                logger.error(f"Failed to extract audio channels: {channel_result['message']}")
+                if callback:
+                    callback({"event_type": "error", "error": channel_result['message']})
+                return
+            
+            logger.info("Successfully split audio into channels.")
+            
+            # Step 2: Transcribe each channel separately
+            logger.info("Step 2: Transcribing each channel...")
+            
+            # Load transcript prompt
+            prompt_path = Path(__file__).parent.parent / "prompts" / "transcript_single.jinja2"
+            try:
+                with open(prompt_path, "r", encoding="utf-8") as f:
+                    transcript_system_prompt = f.read()
+            except Exception as e:
+                logger.error(f"Could not read transcript prompt file: {e}")
+                transcript_system_prompt = "You are a professional call transcript analyst assistant. (Prompt file missing)"
+            
+            transcription_model = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME_TRANSCRIBE", "gpt-4o-audio-preview")
+            
+            # Transcribe left channel
+            logger.info("Transcribing left channel...")
+            with open(left_channel_path, 'rb') as f:
+                left_audio_data = base64.b64encode(f.read()).decode('ascii')
+            
+            left_messages = [
+                {
+                    "role": "system",
+                    "content": [{"type": "text", "text": transcript_system_prompt}]
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_audio",
+                            "input_audio": {
+                                "data": left_audio_data,
+                                "format": "wav"
+                            }
+                        }
+                    ]
+                }
+            ]
+            
+            left_completion = client_transcribe.chat.completions.create(
+                model=transcription_model,
+                messages=left_messages,
+                max_tokens=15000,
+                temperature=0.0,
+                frequency_penalty=0,
+                presence_penalty=0,
+                stop=None,
+                stream=False
+            )
+            
+            left_transcription = left_completion.choices[0].message.content
+            logger.info("Left channel transcribed.")
+            
+            # Transcribe right channel
+            logger.info("Transcribing right channel...")
+            with open(right_channel_path, 'rb') as f:
+                right_audio_data = base64.b64encode(f.read()).decode('ascii')
+            
+            right_messages = [
+                {
+                    "role": "system",
+                    "content": [{"type": "text", "text": transcript_system_prompt}]
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_audio",
+                            "input_audio": {
+                                "data": right_audio_data,
+                                "format": "wav"
+                            }
+                        }
+                    ]
+                }
+            ]
+            
+            right_completion = client_transcribe.chat.completions.create(
+                model=transcription_model,
+                messages=right_messages,
+                max_tokens=15000,
+                temperature=0.0,
+                frequency_penalty=0,
+                presence_penalty=0,
+                stop=None,
+                stream=False
+            )
+            
+            right_transcription = right_completion.choices[0].message.content
+            logger.info("Right channel transcribed.")
+            
+            # Step 3: Combine transcriptions using combine prompt
+            logger.info("Step 3: Combining transcriptions...")
+            
+            # Load combine prompt
+            combine_prompt_path = Path(__file__).parent.parent / "prompts" / "combine.jinja2"
+            try:
+                with open(combine_prompt_path, "r", encoding="utf-8") as f:
+                    combine_system_prompt = f.read()
+            except Exception as e:
+                logger.error(f"Could not read combine prompt file: {e}")
+                combine_system_prompt = "You are a customer support call center specialist. Combine the agent and customer transcripts into a single conversation."
+            
+            # Prepare combine prompt with transcriptions
+            combine_user_prompt = f"""
+agent channel transcript:
+{left_transcription}
+
+customer channel transcript:
+{right_transcription}
+"""
+            
+            combine_messages = [
+                {
+                    "role": "system",
+                    "content": combine_system_prompt
+                },
+                {
+                    "role": "user",
+                    "content": combine_user_prompt
+                }
+            ]
+            
+            # Use a different model for text combination if available, otherwise use the same
+            combine_model = os.getenv("MODEL_NAME")
+            
+            combine_completion = client.chat.completions.create(
+                model=combine_model,
+                messages=combine_messages,
+                max_tokens=15000,
+                temperature=0.0,
+                frequency_penalty=0,
+                presence_penalty=0,
+                stop=None,
+                stream=False
+            )
+            
+            combined_transcription = combine_completion.choices[0].message.content
+            logger.info("Transcriptions combined successfully.")
+            
+            # Save the combined transcription result to a file
+            with open("transcription_results_ADVANCED.txt", "w", encoding="utf-8") as f:
+                f.write("=== LEFT CHANNEL ===\n")
+                f.write(left_transcription)
+                f.write("\n\n=== RIGHT CHANNEL ===\n")
+                f.write(right_transcription)
+                f.write("\n\n=== COMBINED RESULT ===\n")
+                f.write(combined_transcription)
+            
+            # Parse the combined transcription and output through callback
+            logger.info("Processing combined transcription results...")
+            
+            def timestamp_to_ticks(ts):
+                """Convert MM:SS or H:MM:SS to milliseconds."""
+                try:
+                    parts = ts.strip().split(":")
+                    if len(parts) == 2:
+                        minutes, seconds = parts
+                        total_ms = int(minutes) * 60 * 1000 + int(float(seconds) * 1000)
+                    elif len(parts) == 3:
+                        hours, minutes, seconds = parts
+                        total_ms = int(hours) * 3600 * 1000 + int(minutes) * 60 * 1000 + int(float(seconds) * 1000)
+                    else:
+                        total_ms = 0
+                    return total_ms * 10000  # Convert to ticks (1 tick = 100 nanoseconds)
+                except Exception:
+                    return 0
+            
+            # Try to parse as JSON first, fallback to plain text processing
+            try:
+                import re
+                # Remove markdown code block if present
+                match = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", combined_transcription)
+                if match:
+                    json_str = match.group(1)
+                else:
+                    json_str = combined_transcription
+                
+                transcription_items = json.loads(json_str)
+                
+                for item in transcription_items:
+                    ts = item.get("timestamp")
+                    offset_ms = timestamp_to_ticks(ts) if ts else None
+                    transcription_object = {
+                        "event_type": "transcribed",
+                        "session": None,
+                        "offset": offset_ms,
+                        "duration": None,
+                        "text": item.get("text"),
+                        "speaker_id": item.get("speaker"),
+                        "result_id": None,
+                        "filename": self.conversationfilename,
+                        "language": item.get("language"),
+                    }
+                    if callback:
+                        callback(transcription_object)
+                        
+            except Exception as e:
+                logger.warning(f"Could not parse combined transcription as JSON: {e}")
+                # Fallback: treat as plain text and create a single transcription object
+                transcription_object = {
+                    "event_type": "transcribed",
+                    "session": None,
+                    "offset": 0,
+                    "duration": None,
+                    "text": combined_transcription,
+                    "speaker_id": "combined",
+                    "result_id": None,
+                    "filename": self.conversationfilename,
+                    "language": self.language,
+                }
+                if callback:
+                    callback(transcription_object)
+            
+            logger.info("Advanced transcription completed.")
+            if callback:
+                callback({"event_type": "session_stopped", "filename": self.conversationfilename})
+
 
 def cback(event_dict):
     """callback function to handle events"""
