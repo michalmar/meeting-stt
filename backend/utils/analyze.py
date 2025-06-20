@@ -113,7 +113,7 @@ class AnalysisFactory:
         response = self.client.chat.completions.create(
             model=MODEL_NAME,
             messages=messages,
-            max_tokens=2000,
+            max_tokens=8000,
             temperature=0.2,
             top_p=1,
             frequency_penalty=0,
