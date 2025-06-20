@@ -310,7 +310,7 @@ async def submit_transcription(
             q = queue.Queue()
 
             def callback(event_dict):
-                logger.info(f"callback: Received event: {event_dict}")
+                # logger.info(f"callback: Received event: {event_dict}")
                 q.put(event_dict)
 
             import threading
@@ -342,7 +342,7 @@ async def submit_transcription(
             while True:
                 logger.info("event_stream: Waiting for events...")
                 event = q.get()
-                logger.info(f"event_stream: Received event: {event}")
+                # logger.info(f"event_stream: Received event: {event}")
                 yield f"data: {json.dumps(event)}\n\n"
                 if event.get("event_type") in ("closing","session_stopped"):
                     logger.info("event_stream: Ending stream on session_stopped or closing event.")
