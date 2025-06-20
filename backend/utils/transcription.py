@@ -733,118 +733,66 @@ class TranscriptionFactory:
             # Step 3: Combine transcriptions using combine prompt
             logger.info("Step 3: Combining transcriptions...")
             
-            # Load combine prompt
-            combine_prompt_path = Path(__file__).parent.parent / "prompts" / "combine.jinja2"
-            try:
-                with open(combine_prompt_path, "r", encoding="utf-8") as f:
-                    combine_system_prompt = f.read()
-            except Exception as e:
-                logger.error(f"Could not read combine prompt file: {e}")
-                combine_system_prompt = "You are a customer support call center specialist. Combine the agent and customer transcripts into a single conversation."
             
-            # Prepare combine prompt with transcriptions
-            combine_user_prompt = f"""
-agent channel transcript:
-{left_transcription}
-
-customer channel transcript:
-{right_transcription}
-"""
-            
-            combine_messages = [
-                {
-                    "role": "system",
-                    "content": combine_system_prompt
-                },
-                {
-                    "role": "user",
-                    "content": combine_user_prompt
-                }
-            ]
-            
-            # Use a different model for text combination if available, otherwise use the same
-            combine_model = os.getenv("MODEL_NAME")
-            
-            combine_completion = client.chat.completions.create(
-                model=combine_model,
-                messages=combine_messages,
-                max_tokens=15000,
-                temperature=0.0,
-                frequency_penalty=0,
-                presence_penalty=0,
-                stop=None,
-                stream=False
-            )
-            
-            combined_transcription = combine_completion.choices[0].message.content
-            logger.info("Transcriptions combined successfully.")
-            
-            # Save the combined transcription result to a file
-            with open("transcription_results_ADVANCED.txt", "w", encoding="utf-8") as f:
-                f.write("=== LEFT CHANNEL ===\n")
-                f.write(left_transcription)
-                f.write("\n\n=== RIGHT CHANNEL ===\n")
-                f.write(right_transcription)
-                f.write("\n\n=== COMBINED RESULT ===\n")
-                f.write(combined_transcription)
-            
-            # Parse the combined transcription and output through callback
-            logger.info("Processing combined transcription results...")
-            
-            def timestamp_to_ticks(ts):
-                """Convert MM:SS or H:MM:SS to milliseconds."""
-                try:
-                    parts = ts.strip().split(":")
-                    if len(parts) == 2:
-                        minutes, seconds = parts
-                        total_ms = int(minutes) * 60 * 1000 + int(float(seconds) * 1000)
-                    elif len(parts) == 3:
-                        hours, minutes, seconds = parts
-                        total_ms = int(hours) * 3600 * 1000 + int(minutes) * 60 * 1000 + int(float(seconds) * 1000)
-                    else:
-                        total_ms = 0
-                    return total_ms * 10000  # Convert to ticks (1 tick = 100 nanoseconds)
-                except Exception:
-                    return 0
             
             # Try to parse as JSON first, fallback to plain text processing
             try:
                 import re
                 # Remove markdown code block if present
-                match = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", combined_transcription)
+                match = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", left_transcription)
                 if match:
-                    json_str = match.group(1)
+                    json_str_left = match.group(1)
                 else:
-                    json_str = combined_transcription
+                    json_str_left = left_transcription
+
+                transcription_left_items = json.loads(json_str_left)
+
+                # Remove markdown code block if present
+                match = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", right_transcription)
+                if match:
+                    json_str_right = match.group(1)
+                else:
+                    json_str_right = right_transcription
+
+                transcription_right_items = json.loads(json_str_right)
+
                 
-                transcription_items = json.loads(json_str)
-                
-                for item in transcription_items:
-                    ts = item.get("timestamp")
-                    offset_ms = timestamp_to_ticks(ts) if ts else None
-                    transcription_object = {
-                        "event_type": "transcribed",
-                        "session": None,
-                        "offset": offset_ms,
-                        "duration": None,
-                        "text": item.get("text"),
-                        "speaker_id": item.get("speaker"),
-                        "result_id": None,
-                        "filename": self.conversationfilename,
-                        "language": item.get("language"),
-                    }
-                    if callback:
-                        callback(transcription_object)
-                        
-            except Exception as e:
-                logger.warning(f"Could not parse combined transcription as JSON: {e}")
-                # Fallback: treat as plain text and create a single transcription object
                 transcription_object = {
                     "event_type": "transcribed",
                     "session": None,
                     "offset": 0,
                     "duration": None,
-                    "text": combined_transcription,
+                    "text": transcription_left_items.get("text"),
+                    "speaker_id": "Agent",
+                    "result_id": None,
+                    "filename": self.conversationfilename,
+                    "language": transcription_left_items.get("language"),
+                }
+                if callback:
+                    callback(transcription_object)
+
+                transcription_object = {
+                    "event_type": "transcribed",
+                    "session": None,
+                    "offset": 0,
+                    "duration": None,
+                    "text": transcription_right_items.get("text"),
+                    "speaker_id": "Customer",
+                    "result_id": None,
+                    "filename": self.conversationfilename,
+                    "language": transcription_right_items.get("language"),
+                }
+                if callback:
+                    callback(transcription_object)
+            except Exception as e:
+                logger.warning(f"Could not parse combined transcription as JSON: {e}")
+                # Fallback: treat as plain text and create a single transcription object
+                transcription_object = {
+                    "event_type": "transcribed_error",
+                    "session": None,
+                    "offset": 0,
+                    "duration": None,
+                    "text": "error parsing transcription",
                     "speaker_id": "combined",
                     "result_id": None,
                     "filename": self.conversationfilename,

@@ -315,8 +315,12 @@ async def submit_transcription(
 
             import threading
             if model == "llm":
-                logger.info("Starting LLM transcription.")
-                t = threading.Thread(target=factory.conversation_transcription_llm_advanced, kwargs={"callback": callback})
+                if inspection_info.get("channels") == 2:
+                    logger.info("Starting LLM transcription with stereo audio.")
+                    t = threading.Thread(target=factory.conversation_transcription_llm_advanced, kwargs={"callback": callback})
+                else:
+                    logger.info("Starting LLM transcription with mono audio.")
+                    t = threading.Thread(target=factory.conversation_transcription_llm, kwargs={"callback": callback})
             elif model == "whisper":
                 logger.info("Starting Whisper transcription with batch factory.")
                 if blob_url:
