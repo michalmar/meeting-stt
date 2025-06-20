@@ -188,7 +188,7 @@ export default function App() {
   const [groupedResults, setGroupedResults] = useState<Record<string, any[]>>({}); // <-- new state for grouped results
   const [language, setLanguage] = useState<string>('cs-CZ'); // new state for language
   // Add model selection state
-  const [model, setModel] = useState<string>('msft');
+  const [model, setModel] = useState<string>('llm');
 
   // Add new state for grouped speakers by filename
   const [groupedSpeakers, setGroupedSpeakers] = useState<Record<string, { speaker_id: string; speaker_name: string }[]>>({});
@@ -317,6 +317,7 @@ export default function App() {
       setTemperature(0.5); // Reset temperature to default
       setDiarization(true); // Reset diarization to default
       setCombine(false); // Reset combine to default
+      setLanguage('cs-CZ'); // Reset language to default
 
       for (const file of uploadedFiles) {
         const formData = new FormData();
@@ -732,14 +733,14 @@ export default function App() {
                             <SelectValue placeholder="Select model" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="msft">Microsoft</SelectItem>
+                            {/* <SelectItem value="msft">Microsoft</SelectItem> */}
                             <SelectItem value="llm">LLM</SelectItem>
                             <SelectItem value="whisper">Whisper</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
                       {/* Language select */}
-                      <div>
+                      {/* <div>
                         <Label htmlFor="language" className="mb-2 block">Language:</Label>
                         <Select value={language} onValueChange={setLanguage} disabled={model !== 'msft'}>
                           <SelectTrigger className="w-full">
@@ -753,7 +754,7 @@ export default function App() {
                             <SelectItem value="ru-RU">Russian (ru-RU)</SelectItem>
                           </SelectContent>
                         </Select>
-                      </div>
+                      </div> */}
                       {/* Temperature slider - DISABLED */}
                       {/* <div>
                         <Label htmlFor="temperature" className="mb-2 block">Temperature: <span className="font-mono">{temperature.toFixed(2)}</span></Label>
