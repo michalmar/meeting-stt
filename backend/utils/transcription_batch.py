@@ -6,6 +6,23 @@
 """
 Batch transcription factory for Azure Speech Services
 Provides functionality to submit, monitor and retrieve batch transcription jobs using Azure Speech-to-Text API.
+
+Features:
+- Batch transcription using Azure Speech Services
+- Support for Whisper and standard speech models
+- LLM-based cleansing to remove fake or irrelevant utterances
+- Configurable transcription properties
+
+Required Environment Variables:
+- AZURE_SPEECH_KEY: Azure Speech service subscription key
+- AZURE_SPEECH_ENDPOINT: Azure Speech service endpoint  
+- AZURE_SPEECH_REGION: Azure Speech service region
+
+Optional Environment Variables for LLM Cleansing:
+- AZURE_OPENAI_ENDPOINT_TRANSCRIBE: Azure OpenAI endpoint for cleansing
+- AZURE_OPENAI_KEY_TRANSCRIBE: Azure OpenAI API key (optional if using managed identity)
+- AZURE_OPENAI_DEPLOYMENT_NAME_TRANSCRIBE: Model deployment name (default: gpt-4o-audio-preview)
+- ENABLE_LLM_CLEANSING: Enable/disable LLM cleansing by default (default: true)
 """
 
 import requests
@@ -16,6 +33,9 @@ from urllib.parse import urlparse, parse_qs
 from dotenv import load_dotenv
 import os
 import re
+from pathlib import Path
+from openai import AzureOpenAI
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
 # Load environment variables from .env file
 load_dotenv(override=True)
@@ -337,18 +357,23 @@ class TranscriptionBatchFactory:
         
         return matching_models
  
-    def transcribe_batch(self, content_url, model="whisper", callback=None):
+    def transcribe_batch(self, content_url, model="whisper", callback=None, enable_llm_cleansing=None):
         """
-        Main method to perform batch transcription of an audio file.
+        Main method to perform batch transcription of an audio file with optional LLM cleansing.
         
         Args:
             content_url (str): URL of the audio file to transcribe
-            which_model (str): Model type to use ("whisper" or "speech")
+            model (str): Model type to use ("whisper" or "speech")
             callback (function, optional): Callback function for progress updates
+            enable_llm_cleansing (bool, optional): Whether to apply LLM cleansing to remove fake utterances.
+                                                 If None, uses ENABLE_LLM_CLEANSING environment variable (default: True)
             
         Returns:
-            dict: Transcription results
+            dict: Enhanced transcription results with both original and cleansed phrases
         """
+        # Determine if LLM cleansing should be enabled
+        if enable_llm_cleansing is None:
+            enable_llm_cleansing = os.getenv("ENABLE_LLM_CLEANSING", "true").lower() in ("true", "1", "yes", "on")
         self.logger.info(f"Starting batch transcription for: {content_url}")
         start_time = time.time()
 
@@ -399,28 +424,47 @@ class TranscriptionBatchFactory:
         # Parse and save results
         recognized_object = json.loads(file_content)
 
-        # Convert recognizedPhrases to a more usable format
-        recognizedPhrases = recognized_object["recognizedPhrases"]
-        for phrase in recognizedPhrases:
-            del phrase["offset"]
-            del phrase["duration"]
-            phrase["text"] = phrase["nBest"][0]["display"]
-            del phrase["nBest"]
-            phrase["person"] = "customer" if phrase["channel"] == 1 else "agent"
-            # phrase["offsetInTicks"] = phrase["offsetInTicks"] / 10000
+        # Convert recognizedPhrases to the required JSON structure
+        recognizedPhrases = []
+        for phrase in recognized_object["recognizedPhrases"]:
+            # Create the structured JSON format required for LLM processing
+            structured_phrase = {
+                "offsetInTicks": str(phrase["offsetInTicks"]),
+                "text": phrase["nBest"][0]["display"],
+                "speaker": "customer" if phrase["channel"] == 1 else "agent",
+                "locale": phrase.get("locale", locale),
+                "durationInTicks": str(phrase.get("durationInTicks", 0))
+            }
+            recognizedPhrases.append(structured_phrase)
 
-        # Assuming recognizedPhrases is your list of dictionaries
-        recognizedPhrases = sorted(recognizedPhrases, key=lambda x: x['offsetInTicks'])
+        # Sort by offset for chronological order
+        def safe_int_convert(value):
+            """Safely convert string/float to int, handling floating point strings"""
+            try:
+                return int(float(str(value)))
+            except (ValueError, TypeError):
+                self.logger.warning(f"Could not convert '{value}' to int, using 0")
+                return 0
+                
+        recognizedPhrases = sorted(recognizedPhrases, key=lambda x: safe_int_convert(x['offsetInTicks']))
 
+        if enable_llm_cleansing:
+            # Apply LLM cleansing to remove fake or irrelevant utterances
+            self.logger.info("Applying LLM cleansing to remove fake transcriptions...")
+            recognizedPhrasesCleansed = self._cleanse_transcription_with_llm(recognizedPhrases)
+        else:
+            self.logger.info("LLM cleansing disabled, using original transcription.")
+            recognizedPhrasesCleansed = recognizedPhrases
 
-        for phrase in recognizedPhrases:
+        # Use cleansed phrases for callback processing
+        for phrase in recognizedPhrasesCleansed:
             transcription_object = {
                 "event_type": "transcribed",
                 "session": transcription_id,
-                "offset": phrase["offsetInTicks"],
-                "duration": phrase.get("durationInTicks", 0),
+                "offset": safe_int_convert(phrase["offsetInTicks"]),
+                "duration": safe_int_convert(phrase.get("durationInTicks", 0)),
                 "text": phrase.get("text"),
-                "speaker_id": phrase.get("person"),
+                "speaker_id": phrase.get("speaker"),
                 "result_id": None,
                 "filename": file_name,
                 "language": phrase.get("locale"),
@@ -439,10 +483,17 @@ class TranscriptionBatchFactory:
         #     json.dump(recognized_object, f, indent=4, ensure_ascii=False)
         
         total_time = time.time() - start_time
-        # self.logger.info(f"Transcription completed. Results saved to {file_path}")
         self.logger.info(f"Total time elapsed: {total_time:.2f} seconds")
+        self.logger.info(f"Original phrases: {len(recognizedPhrases)}, Cleansed phrases: {len(recognizedPhrasesCleansed)}")
         
-        return recognized_object
+        # Return enhanced object with both original and cleansed data
+        enhanced_object = {
+            **recognized_object,
+            "recognizedPhrasesCleansed": recognizedPhrasesCleansed,
+            "recognizedPhrasesOriginal": recognizedPhrases
+        }
+        
+        return enhanced_object
 
     def _get_model_id(self, which_model):
         """
@@ -646,6 +697,127 @@ class TranscriptionBatchFactory:
         self.logger.info(f"Found {len(matching_files)} files with kind '{kind_filter}'")
         return matching_files
 
+    def _cleanse_transcription_with_llm(self, recognized_phrases):
+        """
+        Cleanse transcription using LLM to remove fake or irrelevant utterances.
+        
+        Args:
+            recognized_phrases (list): List of transcription phrases in the required JSON format
+            
+        Returns:
+            list: Cleansed transcription phrases
+        """
+        self.logger.info(f"Starting LLM-based transcription cleansing for {len(recognized_phrases)} phrases.")
+        
+        try:
+            # Validate input
+            if not recognized_phrases:
+                self.logger.warning("No phrases to cleanse, returning empty list.")
+                return []
+                
+            # Initialize Azure OpenAI client with managed identity for better security
+            api_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+            if not api_endpoint:
+                self.logger.error("AZURE_OPENAI_ENDPOINT not configured")
+                return recognized_phrases
+                
+            self.logger.info("Using managed identity authentication for Azure OpenAI")
+            token_provider = get_bearer_token_provider(
+                DefaultAzureCredential(),
+                "https://cognitiveservices.azure.com/.default"
+            )
+            client = AzureOpenAI(
+                azure_endpoint=api_endpoint,
+                azure_ad_token_provider=token_provider,
+                api_version="2025-01-01-preview",
+            )
+            
+            # Load the cleansing prompt
+            prompt_path = Path(__file__).parent.parent / "prompts" / "transcript_cleanse.jinja2"
+            try:
+                with open(prompt_path, "r", encoding="utf-8") as f:
+                    system_prompt = f.read()
+                    self.logger.debug("Successfully loaded transcript_cleanse.jinja2 prompt")
+            except Exception as e:
+                self.logger.error(f"Could not read cleansing prompt file: {e}")
+                # Fallback system prompt
+                system_prompt = """You are a customer support call center specialist. You are given transcript from a recording of customer and agent call."""
+
+            # Prepare the user message with the recognized phrases
+            user_message = json.dumps(recognized_phrases, ensure_ascii=False, indent=2)
+            self.logger.debug(f"Prepared user message with {len(user_message)} characters")
+            
+            messages = [
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
+                {
+                    "role": "user", 
+                    "content": user_message
+                }
+            ]
+            
+            # Get the model deployment name
+            transcription_model = os.getenv("LLM_MODEL", "gpt-4o")
+            self.logger.info(f"Cleansing transcription with {transcription_model} model.")
+            
+            # Call the LLM with appropriate parameters for cleansing task
+            completion = client.chat.completions.create(
+                model=transcription_model,
+                messages=messages,
+                max_tokens=15000,
+                temperature=0.0,  # Low temperature for consistent cleansing
+                frequency_penalty=0,
+                presence_penalty=0,
+                stop=None,
+                stream=False
+            )
+            
+            cleansed_content = completion.choices[0].message.content
+            self.logger.info("Transcription cleansing completed.")
+            self.logger.debug(f"LLM response length: {len(cleansed_content)} characters")
+            
+            # Parse the cleansed JSON response
+            try:
+                # Handle markdown code blocks if present
+                match = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", cleansed_content)
+                if match:
+                    json_str = match.group(1)
+                    self.logger.debug("Extracted JSON from markdown code blocks")
+                else:
+                    json_str = cleansed_content
+                    
+                cleansed_phrases = json.loads(json_str)
+                
+                # Validate the cleansed phrases structure
+                if not isinstance(cleansed_phrases, list):
+                    raise ValueError("LLM response is not a list")
+                    
+                # Validate each phrase has required fields
+                required_fields = ["offsetInTicks", "text", "speaker", "locale", "durationInTicks"]
+                for i, phrase in enumerate(cleansed_phrases):
+                    if not isinstance(phrase, dict):
+                        raise ValueError(f"Phrase {i} is not a dictionary")
+                    for field in required_fields:
+                        if field not in phrase:
+                            self.logger.warning(f"Phrase {i} missing field '{field}', adding empty value")
+                            phrase[field] = ""
+                
+                self.logger.info(f"Successfully parsed {len(cleansed_phrases)} cleansed phrases (originally {len(recognized_phrases)}).")
+                return cleansed_phrases
+                
+            except json.JSONDecodeError as e:
+                self.logger.error(f"Failed to parse LLM cleansed response as JSON: {e}")
+                self.logger.error(f"Raw LLM response: {cleansed_content[:500]}...")  # Log first 500 chars
+                # Return original phrases if cleansing fails
+                return recognized_phrases
+                
+        except Exception as e:
+            self.logger.error(f"Error during LLM cleansing: {e}")
+            # Return original phrases if cleansing fails
+            return recognized_phrases
+
 
 def callback_example(event_dict):
     """
@@ -693,19 +865,23 @@ if __name__ == "__main__":
         print(f"Using model: {model}")
         
         try:
-            result = factory.transcribe_batch(content_url, model, callback=callback_example)
+            # Enable LLM cleansing to remove fake utterances (can be controlled via ENABLE_LLM_CLEANSING env var)
+            result = factory.transcribe_batch(content_url, model, callback=callback_example, enable_llm_cleansing=True)
             if result:
                 print(f"Transcription completed successfully for {file}")
+                # The result now contains both original and cleansed phrases:
+                # result['recognizedPhrasesOriginal'] - original transcription
+                # result['recognizedPhrasesCleansed'] - LLM-cleansed transcription
             else:
                 print(f"Transcription failed for {file}")
         except Exception as e:
             print(f"Error processing {file}: {e}")
 
-        # Optionally, also try with speech model
+        # Optionally, also try with speech model or without LLM cleansing
         # model = "speech"
         # print(f"Using model: {model}")
         # try:
-        #     result = factory.transcribe_batch(content_url, model, callback=callback_example)
+        #     result = factory.transcribe_batch(content_url, model, callback=callback_example, enable_llm_cleansing=False)
         #     if result:
         #         print(f"Transcription completed successfully for {file} with {model}")
         # except Exception as e:
