@@ -10,15 +10,17 @@ Transcribe the given audio recording into clear, accurate text.
 
 # Output Format
 - Plain text transcription using standard grammar and formatting.
+- Include timestamps for every transcribed chunk (e.g., "[00:21] #Speaker1#: ...").
 - Do not include any additional commentary or notes in the output unless explicitly indicated in the recording.
+- Include every transcribed chunk separately with its detected language.
 - format the output as JSON list with, text, language:
 
+[
 {"text": "...","language": "detected language"},
+{"text": "...","language": "detected language"},
+...
+]
 
 # Notes
 - Clarify whether to include background sounds, speech markers, or emotional cues.
 - Ensure names and technical terms are spelled correctly, using placeholders (e.g., [name]) if unsure.
-- Pay attention to the tone and context of the conversation, as it may affect the transcription.
-- If the recording is in multiple languages, ensure each segment is transcribed in its respective language.
-- Maintain the original meaning and intent of the speakers, even if the language is informal or colloquial.
-- Pay attention to specific words as name of institutions, products, or services that may need to be accurately transcribed.

@@ -630,6 +630,9 @@ class TranscriptionFactory:
                 if callback:
                     callback({"event_type": "error", "error": channel_result['message']})
                 return
+            else:
+                if callback:
+                    callback({"event_type": "channels_extracted", "status": "success"})
             
             logger.info("Successfully split audio into channels.")
             
@@ -684,6 +687,8 @@ class TranscriptionFactory:
             
             left_transcription = left_completion.choices[0].message.content
             logger.info("Left channel transcribed.")
+            if callback:
+                callback({"event_type": "transcribed_delta", "channel": "left", "text": left_transcription})
             
             # Transcribe right channel
             logger.info("Transcribing right channel...")
@@ -722,7 +727,9 @@ class TranscriptionFactory:
             
             right_transcription = right_completion.choices[0].message.content
             logger.info("Right channel transcribed.")
-            
+            if callback:
+                callback({"event_type": "transcribed_delta", "channel": "right", "text": right_transcription})
+
             # Step 3: Combine transcriptions using combine prompt
             logger.info("Step 3: Combining transcriptions...")
             
