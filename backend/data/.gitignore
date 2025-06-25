@@ -2,3 +2,4 @@
 *.mp4
 *.wav
 /results
+*.jinja2
