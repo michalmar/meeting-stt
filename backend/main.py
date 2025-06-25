@@ -21,6 +21,7 @@ import time
 # Import TranscriptionFactory
 from utils.audio import inspect_wav, inspect_audio, convert_mp3_to_wav, inspect_mp3
 from utils.transcription import TranscriptionFactory
+from utils.transcription_batch import TranscriptionBatchFactory
 from utils.analyze import AnalysisFactory
 from utils.storage import StorageFactory
 # from api_key_auth import ensure_valid_api_key
@@ -246,53 +247,102 @@ async def submit_transcription(
             logger.info("File is already in WAV format, no conversion needed.")
         else:
             raise HTTPException(status_code=400, detail="Unsupported audio format")
-
-        # After conversion to wav, check if stereo and convert to mono if needed
-        from utils.audio import convert_stereo_wav_to_mono
-        inspection_info = inspect_wav(temp_path)
-        logger.info(f"Audio inspection info before mono check: {inspection_info}")
-        if inspection_info.get("channels") == 2:
-            logger.info(f"Converting stereo WAV to mono: {temp_path}")
-            mono_result = convert_stereo_wav_to_mono(temp_path)
-            logger.info(mono_result["message"])
-            # Re-inspect after conversion
+        
+        if model == "msft":
+            
+            # After conversion to wav, check if stereo and convert to mono if needed
+            from utils.audio import convert_stereo_wav_to_mono
             inspection_info = inspect_wav(temp_path)
-            logger.info(f"Audio inspection info after mono conversion: {inspection_info}")
+            logger.info(f"Audio inspection info before mono check: {inspection_info}")
+            if inspection_info.get("channels") == 2:
+                logger.info(f"Converting stereo WAV to mono: {temp_path}")
+                mono_result = convert_stereo_wav_to_mono(temp_path)
+                logger.info(mono_result["message"])
+                # Re-inspect after conversion
+                inspection_info = inspect_wav(temp_path)
+                logger.info(f"Audio inspection info after mono conversion: {inspection_info}")
 
-        # Prepare the transcription factory with the saved file path
-        factory = TranscriptionFactory(
-            conversationfilename=temp_path,
-            language=language,
-            channels=int(inspection_info["channels"]),
-            bits_per_sample=int(inspection_info["bits_per_sample"]),
-            samples_per_second=int(inspection_info["samples_per_second"]),
-        )
-        logger.info("TranscriptionFactory initialized successfully.")
+
+            # Prepare the transcription factory with the saved file path
+            factory = TranscriptionFactory(
+                conversationfilename=temp_path,
+                language=language,
+                channels=int(inspection_info["channels"]),
+                bits_per_sample=int(inspection_info["bits_per_sample"]),
+                samples_per_second=int(inspection_info["samples_per_second"]),
+            )
+            logger.info("TranscriptionFactory initialized successfully.")
+        elif model == "llm":
+            
+            inspection_info = inspect_wav(temp_path)
+            logger.info(f"Audio inspection info for LLM: {inspection_info}")
+        
+
+            # Prepare the transcription factory with the saved file path
+            factory = TranscriptionFactory(
+                conversationfilename=temp_path,
+                language=language,
+                channels=int(inspection_info["channels"]),
+                bits_per_sample=int(inspection_info["bits_per_sample"]),
+                samples_per_second=int(inspection_info["samples_per_second"]),
+            )
+            logger.info("TranscriptionFactory initialized successfully.")
+
+        
+        elif model == "whisper":
+            # Upload processed file to blob storage for batch transcription
+            blob_url = None
+            try:
+                storage = StorageFactory()
+                blob_name = f"{os.path.basename(temp_path)}"
+                # Generate SAS token for read access (valid for 24 hours)
+                blob_url = storage.upload_file(temp_path, blob_name, generate_sas=True, sas_expiry_hours=24)
+                logger.info(f"Successfully uploaded file to blob storage with SAS token: {blob_url}")
+            except Exception as e:
+                logger.error(f"Failed to upload file to blob storage: {str(e)}")
+                # Continue with local file processing for non-batch models
+
+            factory = TranscriptionBatchFactory()
+
 
         def event_stream():
             import queue
             q = queue.Queue()
 
             def callback(event_dict):
-                logger.info(f"callback: Received event: {event_dict}")
+                # logger.info(f"callback: Received event: {event_dict}")
                 q.put(event_dict)
 
             import threading
             if model == "llm":
-                logger.info("Starting LLM transcription.")
-                t = threading.Thread(target=factory.conversation_transcription_llm, kwargs={"callback": callback})
+                if inspection_info.get("channels") == 2:
+                    logger.info("Starting LLM transcription with stereo audio.")
+                    t = threading.Thread(target=factory.conversation_transcription_llm_advanced, kwargs={"callback": callback})
+                else:
+                    logger.info("Starting LLM transcription with mono audio.")
+                    t = threading.Thread(target=factory.conversation_transcription_llm, kwargs={"callback": callback})
+            elif model == "whisper":
+                logger.info("Starting Whisper transcription with batch factory.")
+                if blob_url:
+                    content_url = blob_url
+                    logger.info(f"Using uploaded blob URL for Whisper transcription: {content_url}")
+                else:
+                    logger.warning("No blob URL available, falling back to local file processing")
+                    # Fallback to a default URL or raise an error
+                    raise HTTPException(status_code=500, detail="Failed to upload file to blob storage for batch transcription")
+                t = threading.Thread(target=factory.transcribe_batch, kwargs={"content_url": content_url, "model": "whisper", "callback": callback})
             elif model == "msft":
                 logger.info("Starting MSFT transcription.")
                 t = threading.Thread(target=factory.conversation_transcription, kwargs={"callback": callback})
             else:
                 logger.error(f"Invalid model specified: {model}")
-                raise HTTPException(status_code=400, detail="Invalid model specified. Use 'llm' or 'asr'.")
+                raise HTTPException(status_code=400, detail="Invalid model specified. Use 'llm', 'whisper', or 'msft'.")
             t.start()
 
             while True:
                 logger.info("event_stream: Waiting for events...")
                 event = q.get()
-                logger.info(f"event_stream: Received event: {event}")
+                # logger.info(f"event_stream: Received event: {event}")
                 yield f"data: {json.dumps(event)}\n\n"
                 if event.get("event_type") in ("closing","session_stopped"):
                     logger.info("event_stream: Ending stream on session_stopped or closing event.")

@@ -8,7 +8,7 @@ export function Footer() {
         <p className="inline">&copy; 2025 </p>
         <p className="inline">&nbsp;running on </p>
         <img src={aAif} alt="Logo" className="w-[18px] inline" />
-        <p className="inline">&nbsp;ver. 20250606.1</p>
+        <p className="inline">&nbsp;ver. 20250620.1</p>
       </div>
     </footer>
   );

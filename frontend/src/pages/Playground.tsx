@@ -47,7 +47,7 @@ import { ModeToggle } from '@/components/mode-toggle'
 import { Input } from '@/components/ui/input';
 import { useCallback } from 'react';
 import { Button } from '@/components/ui/button'
-import { Slider } from '@/components/ui/slider'
+// import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { 
@@ -188,7 +188,7 @@ export default function App() {
   const [groupedResults, setGroupedResults] = useState<Record<string, any[]>>({}); // <-- new state for grouped results
   const [language, setLanguage] = useState<string>('cs-CZ'); // new state for language
   // Add model selection state
-  const [model, setModel] = useState<string>('msft');
+  const [model, setModel] = useState<string>('llm');
 
   // Add new state for grouped speakers by filename
   const [groupedSpeakers, setGroupedSpeakers] = useState<Record<string, { speaker_id: string; speaker_name: string }[]>>({});
@@ -313,6 +313,12 @@ export default function App() {
       let allResultsCombined: any[] = [];
       let groupedResults: Record<string, any[]> = {};
 
+      // these values are not used in the backend, but we reset them to defaults
+      setTemperature(0.5); // Reset temperature to default
+      setDiarization(true); // Reset diarization to default
+      setCombine(false); // Reset combine to default
+      setLanguage('cs-CZ'); // Reset language to default
+
       for (const file of uploadedFiles) {
         const formData = new FormData();
         formData.append('file_name', file.filename); // file.filename is now the path or name
@@ -355,9 +361,9 @@ export default function App() {
                   if (cleanFilename && cleanFilename.includes('/')) {
                     cleanFilename = cleanFilename.split('/').pop();
                   }
-                  if (cleanFilename && cleanFilename.startsWith('upload_')) {
-                    cleanFilename = cleanFilename.substring(7);
-                  }
+                  // if (cleanFilename && cleanFilename.startsWith('upload_')) {
+                  //   cleanFilename = cleanFilename.substring(7);
+                  // }
 
                   const resultItem = {
                     filename: cleanFilename || file.filename,
@@ -719,10 +725,24 @@ export default function App() {
                       </div>
                     )}
                     <form className="space-y-6" onSubmit={handleTranscriptionSubmit}>
-                      {/* Language select */}
+                      {/* Model selection */}
                       <div>
+                        <Label htmlFor="model" className="mb-2 block">Model selection:</Label>
+                        <Select value={model} onValueChange={setModel}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select model" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {/* <SelectItem value="msft">Microsoft</SelectItem> */}
+                            <SelectItem value="llm">LLM</SelectItem>
+                            <SelectItem value="whisper">Whisper</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {/* Language select */}
+                      {/* <div>
                         <Label htmlFor="language" className="mb-2 block">Language:</Label>
-                        <Select value={language} onValueChange={setLanguage}>
+                        <Select value={language} onValueChange={setLanguage} disabled={model !== 'msft'}>
                           <SelectTrigger className="w-full">
                             <SelectValue placeholder="Select language" />
                           </SelectTrigger>
@@ -734,22 +754,9 @@ export default function App() {
                             <SelectItem value="ru-RU">Russian (ru-RU)</SelectItem>
                           </SelectContent>
                         </Select>
-                      </div>
-                      {/* Model selection */}
-                      <div>
-                        <Label htmlFor="model" className="mb-2 block">Model selection:</Label>
-                        <Select value={model} onValueChange={setModel}>
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select model" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="msft">Microsoft</SelectItem>
-                            <SelectItem value="llm">LLM</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      {/* Temperature slider */}
-                      <div>
+                      </div> */}
+                      {/* Temperature slider - DISABLED */}
+                      {/* <div>
                         <Label htmlFor="temperature" className="mb-2 block">Temperature: <span className="font-mono">{temperature.toFixed(2)}</span></Label>
                         <Slider
                           id="temperature"
@@ -759,25 +766,25 @@ export default function App() {
                           value={[temperature]}
                           onValueChange={([val]) => setTemperature(val)}
                         />
-                      </div>
-                      {/* Diarization switch */}
-                      <div className="flex items-center space-x-2">
+                      </div> */}
+                      {/* Diarization switch - DISABLED */}
+                      {/* <div className="flex items-center space-x-2">
                         <Switch
                           id="diarization"
                           checked={diarization}
                           onCheckedChange={setDiarization}
                         />
                         <Label htmlFor="diarization">Diarization</Label>
-                      </div>
-                      {/* Combine switch */}
-                      <div className="flex items-center space-x-2">
+                      </div> */}
+                      {/* Combine switch - DISABLED */}
+                      {/* <div className="flex items-center space-x-2">
                         <Switch
                           id="combine"
                           checked={combine}
                           onCheckedChange={setCombine}
                         />
                         <Label htmlFor="combine">Combine</Label>
-                      </div>
+                      </div> */}
                       {/* Submit button */}
                       <div>
                         <Button type="submit" variant="default" disabled={isProcessing}>

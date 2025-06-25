@@ -1,4 +1,5 @@
-Session: 3cdc649ba63a4ed9ace1c02fff5edf06, Offset: 0, Duration: 148400000, Text: , Speaker ID: Unknown, Result ID: e21eec472d8a493fa060797f646a3323
-Session: 3cdc649ba63a4ed9ace1c02fff5edf06, Offset: 150000000, Duration: 148800000, Text: , Speaker ID: Unknown, Result ID: da30899cb451410fbffb0d72a25037f1
-Session: 3cdc649ba63a4ed9ace1c02fff5edf06, Offset: 298800000, Duration: 150400000, Text: , Speaker ID: Unknown, Result ID: 017d6a8588cf4191a2731b50e2614e79
-Session: 3cdc649ba63a4ed9ace1c02fff5edf06, Offset: 450600000, Duration: 66000000, Text: , Speaker ID: Unknown, Result ID: 502b13bbee7641aea3ba93b6412cafe7
+Session: 83d4046746d44aabac6781c45921a6ea, Offset: 1500000, Duration: 19600000, Text: Dobrý den, vítejte., Speaker ID: Guest-1, Result ID: 08bc5d4f7a28403cace0f3381ce00e2b
+Session: 83d4046746d44aabac6781c45921a6ea, Offset: 30700000, Duration: 16800000, Text: Ahoj basto co si přeješ?, Speaker ID: Guest-2, Result ID: 06183f2376b1411ebc8b0ec674994f23
+Session: 83d4046746d44aabac6781c45921a6ea, Offset: 58100000, Duration: 10000000, Text: Díky a čau., Speaker ID: Guest-1, Result ID: c3c42a64fe2f47f29ce749a9f245b384
+Session: 83d4046746d44aabac6781c45921a6ea, Offset: 68100000, Duration: 10000000, Text: , Speaker ID: Unknown, Result ID: d6c6a3222f6a42fbb13325cceb900cb2
+Session: 83d4046746d44aabac6781c45921a6ea, Offset: 78100000, Duration: 0, Text: , Speaker ID: Unknown, Result ID: 259c395c576a46aa8e488b9cbb964681

@@ -14,7 +14,7 @@ from scipy.io import wavfile
 import azure.cognitiveservices.speech as speechsdk
 from azure.cognitiveservices.speech.transcription import ConversationTranscriptionEventArgs,ConversationTranscriptionResult
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-
+from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv(override=True)
 
@@ -439,11 +439,13 @@ class TranscriptionFactory:
         """
         Transcribes a conversation using an LLM-based API (e.g., OpenAI Whisper/gpt-4o-transcribe),
         outputs results similar to conversation_transcription, and supports an optional callback(event_dict).
+        Now expects the LLM to return a JSON array of objects with keys: timestamp, text, speaker, language.
         """
         logger = logging.getLogger(__name__)
         logger.info("Starting LLM-based conversation transcription.")
         import base64
         from openai import AzureOpenAI
+        import json
         api_key = os.getenv("AZURE_OPENAI_KEY_TRANSCRIBE")
         api_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT_TRANSCRIBE")
 
@@ -459,6 +461,15 @@ class TranscriptionFactory:
             api_version="2025-01-01-preview",
         )
         logger.info("Initiated LLM client.")
+
+        prompt_path = Path(__file__).parent.parent / "prompts" / "transcript.jinja2"
+        try:
+            with open(prompt_path, "r", encoding="utf-8") as f:
+                system_prompt = f.read()
+        except Exception as e:
+            logger.error(f"Could not read system prompt file: {e}")
+            system_prompt = "You are a professional call transcript analyst assistant. (Prompt file missing)"
+
         encoded_image = base64.b64encode(open(self.conversationfilename, 'rb').read()).decode('ascii')
         chat_prompt = [
             {
@@ -466,32 +477,13 @@ class TranscriptionFactory:
                 "content": [
                     {
                         "type": "text",
-                        "text": "You are an AI assistant that helps people find information."
+                        "text": system_prompt
                     }
                 ]
             },
             {
                 "role": "user",
                 "content": [
-                     {
-                        "type": "text",
-                        # "text": f"""Transcribe the following conversation in {self.language} in attached file. Output format:
-                        # #Speaker-1:# text
-                        # #Speaker-2:# text
-                        # #Speaker-3:# text
-                        # etc.
-                        # """
-                        "text": f"""Transcribe the following conversation in Ukrainian and Russian language in attached file. 
-
-                        The languages are mixed in the conversation, so you need to detect the language of each speaker and transcribe it accordingly.
-
-                        Output format:
-                        #Speaker-1:# (language) text
-                        #Speaker-2:# (language) text
-                        #Speaker-3:# (language) text
-                        etc.
-                        """
-                    },
                     {
                         "type": "input_audio",
                         "input_audio": {
@@ -503,14 +495,13 @@ class TranscriptionFactory:
             }
         ]
         messages = chat_prompt
-
-        logger.info("Sending for transcription.")
+        transcription_model = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME_TRANSCRIBE", "gpt-4o-audio-preview")
+        logger.info(f"Sending for transcription with {transcription_model} model.")
         completion = client.chat.completions.create(
-            model="gpt-4o-audio-preview",
+            model=transcription_model,
             messages=messages,
-            max_tokens=5000,
-            temperature=0.2,
-            top_p=1,
+            max_tokens=15000,
+            temperature=0.0,
             frequency_penalty=0,
             presence_penalty=0,
             stop=None,
@@ -518,31 +509,301 @@ class TranscriptionFactory:
         )
         logger.info("Transcribed.")
 
-        logger.info(f"Transcription result: {completion.choices[0].message.content}")
-
         transcription_text = completion.choices[0].message.content
-        
-        # Parse speaker lines and emit as individual transcription_object events
+        logger.info(f"Transcription result: {transcription_text}")
+
+        #save the transcription result to a file
+        with open("transcription_results_TEST.txt", "w") as f:
+            f.write(transcription_text)
+
+        # Parse the JSON array returned by the LLM, handling markdown code blocks if present
         import re
-        speaker_line_pattern = re.compile(r"^#(Speaker-\d+):#\s*(.*)$", re.MULTILINE)
-        matches = speaker_line_pattern.findall(transcription_text)
-        for speaker_id, text in matches:
+        try:
+            # Remove markdown code block if present
+            match = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", transcription_text)
+            if match:
+                json_str = match.group(1)
+            else:
+                json_str = transcription_text
+            transcription_items = json.loads(json_str)
+        except Exception as e:
+            logger.error(f"Failed to parse LLM transcription as JSON: {e}")
+            if callback:
+                callback({"event_type": "error", "error": str(e), "raw_content": transcription_text})
+            return
+
+        def timestamp_to_ticks(ts):
+            """Convert MM:SS or H:MM:SS to milliseconds."""
+            try:
+                parts = ts.strip().split(":")
+                if len(parts) == 2:
+                    minutes, seconds = parts
+                    total_ms = int(minutes) * 60 * 1000 + int(float(seconds) * 1000)
+                elif len(parts) == 3:
+                    hours, minutes, seconds = parts
+                    total_ms = int(hours) * 3600 * 1000 + int(minutes) * 60 * 1000 + int(float(seconds) * 1000)
+                else:
+                    total_ms = 0
+                return total_ms * 10000  # Convert to ticks (1 tick = 100 nanoseconds)
+            except Exception:
+                return 0
+
+        for item in transcription_items:
+            ts = item.get("timestamp")
+            offset_ms = timestamp_to_ticks(ts) if ts else None
             transcription_object = {
                 "event_type": "transcribed",
                 "session": None,
-                "offset": None,
+                "offset": offset_ms,
                 "duration": None,
-                "text": text,
-                "speaker_id": speaker_id,
+                "text": item.get("text"),
+                "speaker_id": item.get("speaker"),
                 "result_id": None,
                 "filename": self.conversationfilename,
+                "language": item.get("language"),
             }
             if callback:
                 callback(transcription_object)
 
         logger.info("Finished.")
         if callback:
-            callback({"event_type":"session_stopped", "filename":self.conversationfilename})
+            callback({"event_type": "session_stopped", "filename": self.conversationfilename})
+
+    def conversation_transcription_llm_advanced(self, callback=None):
+        """
+        Advanced transcription that splits audio into left/right channels, transcribes each separately,
+        then combines them using LLM with combine prompt for better conversation flow.
+        """
+        logger = logging.getLogger(__name__)
+        logger.info("Starting advanced LLM-based conversation transcription with channel separation.")
+        
+        import base64
+        from openai import AzureOpenAI
+        import json
+        import os
+        import tempfile
+        from pathlib import Path
+        
+        # Import the audio channel extraction function
+        import sys
+        sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+        from utils.audio import extract_audio_channels
+        
+        # Initialize Azure OpenAI client
+        # api_key = os.getenv("AZURE_OPENAI_KEY_TRANSCRIBE")
+        api_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+        api_endpoint_transcribe = os.getenv("AZURE_OPENAI_ENDPOINT_TRANSCRIBE")
+
+        token_provider = get_bearer_token_provider(
+            DefaultAzureCredential(),
+            "https://cognitiveservices.azure.com/.default"
+        )
+
+        client = AzureOpenAI(
+            azure_endpoint=api_endpoint,
+            azure_ad_token_provider=token_provider,
+            api_version="2025-01-01-preview",
+        )
+        client_transcribe = AzureOpenAI(
+            azure_endpoint=api_endpoint_transcribe,
+            azure_ad_token_provider=token_provider,
+            api_version="2025-01-01-preview",
+        )
+        logger.info("Initiated LLM client.")
+
+        # Step 1: Split audio into left and right channels
+        logger.info("Step 1: Splitting audio into left and right channels...")
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            left_channel_path = os.path.join(temp_dir, "left_channel.wav")
+            right_channel_path = os.path.join(temp_dir, "right_channel.wav")
+            
+            # Extract channels
+            channel_result = extract_audio_channels(
+                self.conversationfilename,
+                left_output_path=left_channel_path,
+                right_output_path=right_channel_path
+            )
+            
+            if not channel_result["success"]:
+                logger.error(f"Failed to extract audio channels: {channel_result['message']}")
+                if callback:
+                    callback({"event_type": "error", "error": channel_result['message']})
+                return
+            else:
+                if callback:
+                    callback({"event_type": "channels_extracted", "status": "success"})
+            
+            logger.info("Successfully split audio into channels.")
+            
+            # Step 2: Transcribe each channel separately
+            logger.info("Step 2: Transcribing each channel...")
+            
+            # Load transcript prompt
+            prompt_path = Path(__file__).parent.parent / "prompts" / "transcript_single.jinja2"
+            try:
+                with open(prompt_path, "r", encoding="utf-8") as f:
+                    transcript_system_prompt = f.read()
+            except Exception as e:
+                logger.error(f"Could not read transcript prompt file: {e}")
+                transcript_system_prompt = "You are a professional call transcript analyst assistant. (Prompt file missing)"
+            
+            transcription_model = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME_TRANSCRIBE", "gpt-4o-audio-preview")
+            
+            # Transcribe left channel
+            logger.info("Transcribing left channel...")
+            with open(left_channel_path, 'rb') as f:
+                left_audio_data = base64.b64encode(f.read()).decode('ascii')
+            
+            left_messages = [
+                {
+                    "role": "system",
+                    "content": [{"type": "text", "text": transcript_system_prompt}]
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_audio",
+                            "input_audio": {
+                                "data": left_audio_data,
+                                "format": "wav"
+                            }
+                        }
+                    ]
+                }
+            ]
+            
+            left_completion = client_transcribe.chat.completions.create(
+                model=transcription_model,
+                messages=left_messages,
+                max_tokens=15000,
+                temperature=0.0,
+                frequency_penalty=0,
+                presence_penalty=0,
+                stop=None,
+                stream=False
+            )
+            
+            left_transcription = left_completion.choices[0].message.content
+            logger.info("Left channel transcribed.")
+            if callback:
+                callback({"event_type": "transcribed_delta", "channel": "left", "text": left_transcription})
+            
+            # Transcribe right channel
+            logger.info("Transcribing right channel...")
+            with open(right_channel_path, 'rb') as f:
+                right_audio_data = base64.b64encode(f.read()).decode('ascii')
+            
+            right_messages = [
+                {
+                    "role": "system",
+                    "content": [{"type": "text", "text": transcript_system_prompt}]
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_audio",
+                            "input_audio": {
+                                "data": right_audio_data,
+                                "format": "wav"
+                            }
+                        }
+                    ]
+                }
+            ]
+            
+            right_completion = client_transcribe.chat.completions.create(
+                model=transcription_model,
+                messages=right_messages,
+                max_tokens=15000,
+                temperature=0.0,
+                frequency_penalty=0,
+                presence_penalty=0,
+                stop=None,
+                stream=False
+            )
+            
+            right_transcription = right_completion.choices[0].message.content
+            logger.info("Right channel transcribed.")
+            if callback:
+                callback({"event_type": "transcribed_delta", "channel": "right", "text": right_transcription})
+
+            # Step 3: Combine transcriptions using combine prompt
+            logger.info("Step 3: Combining transcriptions...")
+            
+            
+            
+            # Try to parse as JSON first, fallback to plain text processing
+            try:
+                import re
+                # Remove markdown code block if present
+                match = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", left_transcription)
+                if match:
+                    json_str_left = match.group(1)
+                else:
+                    json_str_left = left_transcription
+
+                transcription_left_items = json.loads(json_str_left)
+
+                # Remove markdown code block if present
+                match = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", right_transcription)
+                if match:
+                    json_str_right = match.group(1)
+                else:
+                    json_str_right = right_transcription
+
+                transcription_right_items = json.loads(json_str_right)
+
+                
+                transcription_object = {
+                    "event_type": "transcribed",
+                    "session": None,
+                    "offset": 0,
+                    "duration": None,
+                    "text": transcription_left_items.get("text"),
+                    "speaker_id": "Agent",
+                    "result_id": None,
+                    "filename": self.conversationfilename,
+                    "language": transcription_left_items.get("language"),
+                }
+                if callback:
+                    callback(transcription_object)
+
+                transcription_object = {
+                    "event_type": "transcribed",
+                    "session": None,
+                    "offset": 0,
+                    "duration": None,
+                    "text": transcription_right_items.get("text"),
+                    "speaker_id": "Customer",
+                    "result_id": None,
+                    "filename": self.conversationfilename,
+                    "language": transcription_right_items.get("language"),
+                }
+                if callback:
+                    callback(transcription_object)
+            except Exception as e:
+                logger.warning(f"Could not parse combined transcription as JSON: {e}")
+                # Fallback: treat as plain text and create a single transcription object
+                transcription_object = {
+                    "event_type": "transcribed_error",
+                    "session": None,
+                    "offset": 0,
+                    "duration": None,
+                    "text": "error parsing transcription",
+                    "speaker_id": "combined",
+                    "result_id": None,
+                    "filename": self.conversationfilename,
+                    "language": self.language,
+                }
+                if callback:
+                    callback(transcription_object)
+            
+            logger.info("Advanced transcription completed.")
+            if callback:
+                callback({"event_type": "session_stopped", "filename": self.conversationfilename})
 
 
 def cback(event_dict):
@@ -567,5 +828,10 @@ if __name__ == "__main__":
     # backend/data/test-transcription-cz.wav
     
     # LLM
-    factory.conversationfilename = "../data/test-transcription-cz.wav"
+    # factory.conversationfilename = "../data/test-transcription-cz.wav"
+    # factory.conversationfilename = "./data/STT - test - EN - banking - mid.wav"
+    # factory.conversationfilename = "./data/STT - test - UA - banking - mid.wav"
+    # factory.conversationfilename = "./data/STT - test - UA - banking - long.wav"
+    # factory.conversationfilename = "./data/STT - test - EN - banking - long.wav"
+    factory.conversationfilename = "./data/STT - test - EN - banking - long (1).wav"
     factory.conversation_transcription_llm(cback)

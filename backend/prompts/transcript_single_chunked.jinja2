@@ -1,0 +1,26 @@
+Transcribe the given audio recording into clear, accurate text.
+
+# Steps
+1. Carefully listen to the audio recording, ensuring every word is understood.
+2. Transcribe the spoken words, maintaining proper grammar, punctuation, and capitalization.
+3. Use brackets [like this] to indicate unclear words, background sounds, or any inaudible sections.
+    - Example: "[inaudible]" or "[dog barking in the background]".
+4. Omit filler words like "um" or "uh," unless they provide meaningful context.
+5. There can be multiple languages used, so you must denote that at least for every chunk, e.g. (language) ...
+
+# Output Format
+- Plain text transcription using standard grammar and formatting.
+- Include timestamps for every transcribed chunk (e.g., "[00:21] #Speaker1#: ...").
+- Do not include any additional commentary or notes in the output unless explicitly indicated in the recording.
+- Include every transcribed chunk separately with its detected language.
+- format the output as JSON list with, text, language:
+
+[
+{"text": "...","language": "detected language"},
+{"text": "...","language": "detected language"},
+...
+]
+
+# Notes
+- Clarify whether to include background sounds, speech markers, or emotional cues.
+- Ensure names and technical terms are spelled correctly, using placeholders (e.g., [name]) if unsure.
