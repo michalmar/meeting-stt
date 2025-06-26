@@ -153,9 +153,9 @@ module backend './app/backend.bicep' = {
     defaultSubnetId: network.outputs.defaultSubnetId
     speechServiceName: '${abbrs.cognitiveServicesAccounts}speech-${resourceToken}'
     azureOpenaiResourceName: '${abbrs.cognitiveServicesAccounts}openai-${resourceToken}'
-    azureOpenaiDeploymentName: 'gpt-4o'
+    azureOpenaiDeploymentName: 'chat'
     azureOpenaiTranscribeResourceName: '${abbrs.cognitiveServicesAccounts}transcribe-${resourceToken}'
-    azureOpenaiTranscribeDeploymentName: 'gpt-4o-transcribe'
+    azureOpenaiTranscribeDeploymentName: 'transcribe'
   }
   scope: rg
   dependsOn: [

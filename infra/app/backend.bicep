@@ -130,6 +130,42 @@ resource peStorage 'Microsoft.Network/privateEndpoints@2021-05-01' = {
   }
 }
 
+// Private DNS Zone for Storage Account
+resource privateDnsZoneStorage 'Microsoft.Network/privateDnsZones@2020-06-01' = {
+  name: 'privatelink.blob.${environment().suffixes.storage}'
+  location: 'global'
+  properties: {}
+}
+
+// Link the private DNS zone to the virtual network
+resource privateDnsZoneStorageVnetLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = {
+  parent: privateDnsZoneStorage
+  name: 'storage-vnet-link'
+  location: 'global'
+  properties: {
+    registrationEnabled: false
+    virtualNetwork: {
+      id: vnetId
+    }
+  }
+}
+
+// DNS Zone Group for Storage Private Endpoint
+resource privateDnsZoneGroupStorage 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2021-05-01' = {
+  parent: peStorage
+  name: 'default'
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: 'privatelink-blob-core-windows-net'
+        properties: {
+          privateDnsZoneId: privateDnsZoneStorage.id
+        }
+      }
+    ]
+  }
+}
+
 resource peSpeech 'Microsoft.Network/privateEndpoints@2021-05-01' = {
   name: 'pe-speech-${uniqueString(speechServiceName, location)}'
   location: location
@@ -350,25 +386,6 @@ resource openaideployment 'Microsoft.CognitiveServices/accounts/deployments@2024
 }
 
 
-// resource userOpenaiRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-//   name: guid(openai.id, userPrincipalId, 'Cognitive Services OpenAI User')
-//   scope: openai
-//   properties: {
-//     principalId: userPrincipalId
-//     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
-//   }
-// } 
-
-// resource appOpenaiRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-//   name: guid(openai.id, identity.id, 'Cognitive Services OpenAI User')
-//   scope: openai
-//   properties: {
-//     principalId: identity.properties.principalId
-//     principalType: 'ServicePrincipal'
-//     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
-//   }
-// }
-
 resource openaiTranscribe 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = {
   name: azureOpenaiTranscribeResourceName
   location: 'swedencentral'
@@ -393,51 +410,32 @@ resource openaiTranscribeDeployment 'Microsoft.CognitiveServices/accounts/deploy
       format: 'OpenAI'
       name: 'gpt-4o-audio-preview'
       version: '2024-12-17'
+      // name: 'gpt-4o-transcribe'
+      // version: '2025-03-20'
+
     }
     versionUpgradeOption: 'OnceCurrentVersionExpired'
   }
 }
 
-resource openaiTranscriberWhisper 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-preview' = {
-  parent: openaiTranscribe
-  name: 'whisper'
-  sku: {
-    name: 'Standard'
-    capacity: 3
-  }
-  properties: {
-    model: {
-      format: 'OpenAI'
-      name: 'whisper'
-      version: '001'
-    }
-    versionUpgradeOption: 'OnceNewDefaultVersionAvailable'
-  }
-  dependsOn: [
-    openaiTranscribeDeployment
-  ]
-}
-
-
-// // Grant Cognitive Services User role to user for the transcribe OpenAI resource
-// resource userOpenaiTranscribeRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-//   name: guid(openaiTranscribe.id, userPrincipalId, 'Cognitive Services OpenAI User')
-//   scope: openaiTranscribe
-//   properties: {
-//     principalId: userPrincipalId
-//     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+// resource openaiTranscriberWhisper 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-preview' = {
+//   parent: openaiTranscribe
+//   name: 'whisper'
+//   sku: {
+//     name: 'Standard'
+//     capacity: 3
 //   }
-// }
-
-// // Grant Cognitive Services User role to app managed identity for the transcribe OpenAI resource
-// resource appOpenaiTranscribeRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-//   name: guid(openaiTranscribe.id, identity.id, 'Cognitive Services OpenAI User')
-//   scope: openaiTranscribe
 //   properties: {
-//     principalId: identity.properties.principalId
-//     principalType: 'ServicePrincipal'
-//     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+//     model: {
+//       format: 'OpenAI'
+//       name: 'whisper'
+//       version: '001'
+//     }
+//     versionUpgradeOption: 'OnceNewDefaultVersionAvailable'
 //   }
+//   dependsOn: [
+//     openaiTranscribeDeployment
+//   ]
 // }
 
 resource speech 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
@@ -456,55 +454,96 @@ resource speech 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
   }
 }
 
-// // Grant Cognitive Services User role to user
-// resource userSpeechRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-//   name: guid(speech.id, userPrincipalId, 'Cognitive Services Speech User')
-//   scope: speech
-//   properties: {
-//     principalId: userPrincipalId
-//     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'f2dc8367-1007-4938-bd23-fe263f013447')
-//   }
-// }
 
-// // Grant Cognitive Services User role to app managed identity
-// resource appSpeechRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-//   name: guid(speech.id, identity.id, 'Cognitive Services Speech User')
-//   scope: speech
-//   properties: {
-//     principalId: identity.properties.principalId
-//     principalType: 'ServicePrincipal'
-//     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'f2dc8367-1007-4938-bd23-fe263f013447')
-//   }
-// }
+resource userOpenaiRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(openai.id, userPrincipalId, 'Cognitive Services OpenAI User')
+  scope: openai
+  properties: {
+    principalId: userPrincipalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  }
+} 
 
-// resource storageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-//   name: guid(storageAcct.id, identity.id, 'Storage Blob Data Contributor for Speech')
-//   scope: storageAcct
-//   properties: {
-//     principalId: speech.identity.principalId
-//     principalType: 'ServicePrincipal'
-//     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
-//   }
-// }
+resource appOpenaiRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(openai.id, identity.id, 'Cognitive Services OpenAI User')
+  scope: openai
+  properties: {
+    principalId: identity.properties.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  }
+}
 
-// resource storageRoleAssignmentApp 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-//   name: guid(storageAcct.id, identity.id, 'Storage Blob Data Contributor for App')
-//   scope: storageAcct
-//   properties: {
-//     principalId: identity.properties.principalId
-//     principalType: 'ServicePrincipal'
-//     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
-//   }
-// }
+// Grant Cognitive Services User role to user for the transcribe OpenAI resource
+resource userOpenaiTranscribeRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(openaiTranscribe.id, userPrincipalId, 'Cognitive Services OpenAI User')
+  scope: openaiTranscribe
+  properties: {
+    principalId: userPrincipalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  }
+}
 
-// resource userStorageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-//   name: guid(storageAcct.id, userPrincipalId, 'Storage Blob Data Contributor for User')
-//   scope: storageAcct
-//   properties: {
-//     principalId: userPrincipalId
-//     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
-//   }
-// }
+// Grant Cognitive Services User role to app managed identity for the transcribe OpenAI resource
+resource appOpenaiTranscribeRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(openaiTranscribe.id, identity.id, 'Cognitive Services OpenAI User')
+  scope: openaiTranscribe
+  properties: {
+    principalId: identity.properties.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  }
+}
+
+// Grant Cognitive Services User role to user
+resource userSpeechRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(speech.id, userPrincipalId, 'Cognitive Services Speech User')
+  scope: speech
+  properties: {
+    principalId: userPrincipalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'f2dc8367-1007-4938-bd23-fe263f013447')
+  }
+}
+
+// Grant Cognitive Services User role to app managed identity
+resource appSpeechRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(speech.id, identity.id, 'Cognitive Services Speech User')
+  scope: speech
+  properties: {
+    principalId: identity.properties.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'f2dc8367-1007-4938-bd23-fe263f013447')
+  }
+}
+
+resource storageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAcct.id, identity.id, 'Storage Blob Data Contributor for Speech')
+  scope: storageAcct
+  properties: {
+    principalId: speech.identity.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+  }
+}
+
+resource storageRoleAssignmentApp 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAcct.id, identity.id, 'Storage Blob Data Contributor for App')
+  scope: storageAcct
+  properties: {
+    principalId: identity.properties.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+  }
+}
+
+resource userStorageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAcct.id, userPrincipalId, 'Storage Blob Data Contributor for User')
+  scope: storageAcct
+  properties: {
+    principalId: userPrincipalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+  }
+}
 
 
 output defaultDomain string = containerAppsEnvironment.properties.defaultDomain
