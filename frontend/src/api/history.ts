@@ -1,6 +1,6 @@
 import { HistoryResponse, HistoryDetailResponse, TranscriptionsResponse } from '@/types/history';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const BASE_URL = import.meta.env.VITE_BASE_URL || 'http://localhost:8000';
 
 export class HistoryAPI {
   // Get all history records
@@ -10,7 +10,7 @@ export class HistoryAPI {
       limit: limit.toString(),
     });
     
-    const response = await fetch(`${API_BASE_URL}/history?${params}`);
+    const response = await fetch(`${BASE_URL}/history?${params}`);
     if (!response.ok) {
       throw new Error(`Failed to fetch history: ${response.statusText}`);
     }
@@ -23,7 +23,7 @@ export class HistoryAPI {
       visible_only: visibleOnly.toString(),
     });
     
-    const response = await fetch(`${API_BASE_URL}/history/user/${userId}?${params}`);
+    const response = await fetch(`${BASE_URL}/history/user/${userId}?${params}`);
     if (!response.ok) {
       throw new Error(`Failed to fetch user history: ${response.statusText}`);
     }
@@ -36,7 +36,7 @@ export class HistoryAPI {
       visible_only: visibleOnly.toString(),
     });
     
-    const response = await fetch(`${API_BASE_URL}/history/session/${sessionId}?${params}`);
+    const response = await fetch(`${BASE_URL}/history/session/${sessionId}?${params}`);
     if (!response.ok) {
       throw new Error(`Failed to fetch session history: ${response.statusText}`);
     }
@@ -45,7 +45,7 @@ export class HistoryAPI {
 
   // Get specific history record
   static async getHistoryRecord(historyId: string): Promise<HistoryDetailResponse> {
-    const response = await fetch(`${API_BASE_URL}/history/${historyId}`);
+    const response = await fetch(`${BASE_URL}/history/${historyId}`);
     if (!response.ok) {
       throw new Error(`Failed to fetch history record: ${response.statusText}`);
     }
@@ -54,7 +54,7 @@ export class HistoryAPI {
 
   // Get transcriptions from history
   static async getTranscriptionsFromHistory(historyId: string): Promise<TranscriptionsResponse> {
-    const response = await fetch(`${API_BASE_URL}/history/${historyId}/transcriptions`);
+    const response = await fetch(`${BASE_URL}/history/${historyId}/transcriptions`);
     if (!response.ok) {
       throw new Error(`Failed to fetch transcriptions: ${response.statusText}`);
     }
@@ -66,7 +66,7 @@ export class HistoryAPI {
     const formData = new FormData();
     formData.append('visible', visible.toString());
     
-    const response = await fetch(`${API_BASE_URL}/history/${historyId}/visibility`, {
+    const response = await fetch(`${BASE_URL}/history/${historyId}/visibility`, {
       method: 'PUT',
       body: formData,
     });
@@ -86,7 +86,7 @@ export class HistoryAPI {
     formData.append('analysis_text', analysisText);
     
     const response = await fetch(
-      `${API_BASE_URL}/history/${historyId}/transcription/${transcriptionIndex}/analysis`,
+      `${BASE_URL}/history/${historyId}/transcription/${transcriptionIndex}/analysis`,
       {
         method: 'POST',
         body: formData,
