@@ -265,6 +265,7 @@ class TranscriptionFactory:
                 "speaker_id": evt.result.speaker_id,
                 "result_id": evt.result.result_id,
                 "filename": self.conversationfilename,
+                "language": self.language,
                 # "properties": evt.result.properties,
             }
             # print('TRANSCRIBED: {}'.format(transcription_object["text"]))
@@ -375,6 +376,7 @@ class TranscriptionFactory:
                 "text": evt.result.text,
                 "speaker_id": evt.result.speaker_id,
                 "result_id": evt.result.result_id,
+                "language": self.language,
             }
             transcription_results.append(transcription_object)
             if callback:

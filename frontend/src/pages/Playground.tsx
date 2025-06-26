@@ -25,7 +25,7 @@ interface UploadedFile {
 import { useState, useEffect, useRef } from 'react'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { AppSidebar } from "@/components/app-sidebar"
-// import { useUserContext } from '@/contexts/UserContext'
+import { useUserContext } from '@/contexts/UserContext'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -69,9 +69,9 @@ console.log('BASE_URL:', BASE_URL);
 export default function App() {
 
 
-  const [sessionID, setSessionID] = useState('')
   const [sessionTime, setSessionTime] = useState('')
-  // const { userInfo } = useUserContext();
+  const { userInfo } = useUserContext();
+  const [sessionID] = useState(userInfo.sessionId || '');
 
   
   
@@ -328,6 +328,11 @@ export default function App() {
         formData.append('combine', combine ? 'true' : 'false');
         formData.append('language', language);
         formData.append('model', model);
+        formData.append('user_id', userInfo.email); // Add user email as user_id
+        formData.append('session_id', userInfo.sessionId); // Add session_id from user context
+
+        console.log('Session ID:', userInfo.sessionId);
+        console.log('User ID:', userInfo.email);
 
         const response = await fetch(`${BASE_URL}/submit`, {
           method: 'POST',
@@ -354,7 +359,7 @@ export default function App() {
               if (jsonStr) {
                 try {
                   const data = JSON.parse(jsonStr);
-                  setSessionID(data.session);
+                  // setSessionID(data.session);
 
                   // Extract just the filename from the full path (remove ./data/upload_ prefix)
                   let cleanFilename = data.filename;
@@ -575,6 +580,10 @@ export default function App() {
                 </BreadcrumbList>
               </Breadcrumb>
               <div className="ml-auto hidden items-center gap-2 md:flex">
+              <div className="text-xs text-muted-foreground">
+                {userInfo.sessionId }
+              </div>
+              <Separator orientation="vertical" className="h-4" />
               <ModeToggle />
               </div>
             </div>

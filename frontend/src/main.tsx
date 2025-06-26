@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import Playground from './pages/Playground'
 import Introduction from './pages/Introduction'
+import History from './pages/History'
 import './index.css'
 import { UserProvider, UserContext, getUserInfo } from './contexts/UserContext'
 import { Loader2 } from 'lucide-react'
@@ -38,6 +39,7 @@ function App() {
       <Route path="/introduction" element={<Introduction />} />
       <Route path="/get-started" element={<Introduction />} />
       <Route path="/general" element={<Introduction />} />
+      <Route path="/history" element={<History />} />
     </Routes>
   );
 }

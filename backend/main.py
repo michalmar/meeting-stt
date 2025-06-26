@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI, Depends, UploadFile, HTTPException, Query, File, Form, Body
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,6 +23,7 @@ from utils.transcription import TranscriptionFactory
 from utils.transcription_batch import TranscriptionBatchFactory
 from utils.analyze import AnalysisFactory
 from utils.storage import StorageFactory
+from utils.states import History, Transcription, Transcript_chunk
 # from api_key_auth import ensure_valid_api_key
 
 # API to upload files from blob storage by blob names
@@ -42,13 +42,20 @@ async def lifespan(app: FastAPI):
     # Startup code: initialize database and configure logging
     # app.state.db = None
     # app.state.db = CosmosDB()
+    
+    # Initialize history state
+    app.state.history = []  # List to store History objects
+    
     logging.basicConfig(level=logging.INFO,
                         format='%(levelname)s: %(asctime)s - %(message)s')
     print("Database initialized.")
+    print("History state initialized.")
     yield
     # Shutdown code (optional)
     # Cleanup database connection
     app.state.db = None
+    # Clear history state
+    app.state.history = None
 
 app = FastAPI(lifespan=lifespan)
 # app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, dependencies=[Depends(ensure_valid_api_key)])
@@ -60,6 +67,53 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Helper functions for history management
+def add_history_record(user_id: str, session_id: str, history_type: str = "transcription") -> History:
+    """Create a new history record and add it to the application state."""
+    history_id = str(uuid.uuid4())
+    history_record = History(
+        id=history_id,
+        user_id=user_id,
+        session_id=session_id,
+        type=history_type
+    )
+    app.state.history.append(history_record)
+    return history_record
+
+def add_transcription_to_history(history_id: str, transcription: Transcription) -> bool:
+    """Add a transcription to an existing history record."""
+    for history_record in app.state.history:
+        if history_record.id == history_id:
+            history_record.transcriptions.append(transcription)
+            return True
+    return False
+
+def get_history_by_id(history_id: str) -> History:
+    """Get a history record by its ID."""
+    for history_record in app.state.history:
+        if history_record.id == history_id:
+            return history_record
+    return None
+
+def get_user_history(user_id: str, visible_only: bool = True) -> List[History]:
+    """Get all history records for a specific user."""
+    user_histories = []
+    for history_record in app.state.history:
+        if history_record.user_id == user_id:
+            if not visible_only or history_record.visible:
+                user_histories.append(history_record)
+    return user_histories
+
+def get_session_history(session_id: str, visible_only: bool = True) -> List[History]:
+    """Get all history records for a specific session."""
+    session_histories = []
+    for history_record in app.state.history:
+        if history_record.session_id == session_id:
+            if not visible_only or history_record.visible:
+                session_histories.append(history_record)
+    return session_histories
 
 
 def get_current_time():
@@ -305,11 +359,79 @@ async def submit_transcription(
             factory = TranscriptionBatchFactory()
 
 
+        # Create history record if user_id and session_id are provided
+        history_record = None
+        transcription_record = None
+        if user_id and session_id:
+            # Check if there's already a history record for this session
+            existing_histories = get_session_history(session_id, visible_only=False)
+            if existing_histories:
+                # Use the most recent history record for this session
+                history_record = existing_histories[-1]
+                logger.info(f"Using existing history record: {history_record.id}")
+            else:
+                # Create a new history record
+                history_record = add_history_record(user_id, session_id)
+                logger.info(f"Created new history record: {history_record.id}")
+            
+            # Create transcription record
+            transcription_record = Transcription(
+                file_name=file_name,
+                file_name_original=file_name_original,
+                language=language,
+                model=model,
+                temperature=temperature,
+                diarization=diarization,
+                combine=combine,
+                status="pending"
+            )
+            
+            # Add transcription to history
+            add_transcription_to_history(history_record.id, transcription_record)
+            logger.info(f"Added transcription to history record: {history_record.id}")
+
         def event_stream():
             import queue
             q = queue.Queue()
 
             def callback(event_dict):
+                # Update transcription record status and content if available
+                if transcription_record:
+                    if event_dict.get("event_type") == "transcribed":
+                        # Create a transcript chunk from the event data
+                        chunk = Transcript_chunk(
+                            event_type=event_dict.get("event_type", "transcribed"),
+                            session=event_dict.get("session"),
+                            offset=event_dict.get("offset"),
+                            duration=event_dict.get("duration"),
+                            text=event_dict.get("text", ""),
+                            speaker_id=event_dict.get("speaker_id"),
+                            result_id=event_dict.get("result_id"),
+                            filename=event_dict.get("filename", transcription_record.file_name),
+                            language=transcription_record.language
+                        )
+                        transcription_record.transcript_chunks.append(chunk)
+                        logger.info(f"Added transcript chunk with {len(event_dict.get('text', ''))} characters")
+                    elif event_dict.get("event_type") == "transcript":
+                        # Handle legacy transcript events that might contain full text
+                        # Create a single chunk for backward compatibility
+                        chunk = Transcript_chunk(
+                            event_type="transcribed",
+                            text=event_dict.get("text", ""),
+                            filename=transcription_record.file_name,
+                            language=transcription_record.language
+                        )
+                        transcription_record.transcript_chunks.append(chunk)
+                        transcription_record.status = "completed"
+                        logger.info("Updated transcription record with legacy transcript text")
+                    elif event_dict.get("event_type") in ("closing", "session_stopped"):
+                        if transcription_record.status == "pending":
+                            transcription_record.status = "completed"
+                        logger.info(f"Final transcription status: {transcription_record.status}")
+                    elif event_dict.get("event_type") == "error":
+                        transcription_record.status = "failed"
+                        logger.error("Transcription failed, updated status")
+                
                 # logger.info(f"callback: Received event: {event_dict}")
                 q.put(event_dict)
 
@@ -477,3 +599,207 @@ async def analyze_transcript(
     except Exception as e:
         logger.error(f"Error initializing AnalysisFactory: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to initialize analysis factory")
+
+
+# History Management Endpoints
+
+@app.post("/history/create")
+async def create_history_record(
+    user_id: str = Form(...),
+    session_id: str = Form(...),
+    history_type: str = Form("transcription")
+):
+    """Create a new history record."""
+    logger = logging.getLogger("create_history_record")
+    logger.setLevel(logging.INFO)
+    
+    try:
+        history_record = add_history_record(user_id, session_id, history_type)
+        logger.info(f"Created history record with ID: {history_record.id}")
+        return {
+            "status": "success",
+            "history_id": history_record.id,
+            "message": "History record created successfully"
+        }
+    except Exception as e:
+        logger.error(f"Error creating history record: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to create history record")
+
+@app.get("/history/user/{user_id}")
+async def get_user_history_endpoint(
+    user_id: str,
+    visible_only: bool = Query(True, description="Show only visible records")
+):
+    """Get all history records for a specific user."""
+    logger = logging.getLogger("get_user_history")
+    logger.setLevel(logging.INFO)
+    
+    try:
+        histories = get_user_history(user_id, visible_only)
+        logger.info(f"Found {len(histories)} history records for user {user_id}")
+        return {
+            "status": "success",
+            "user_id": user_id,
+            "count": len(histories),
+            "histories": histories
+        }
+    except Exception as e:
+        logger.error(f"Error retrieving user history: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve user history")
+
+@app.get("/history/session/{session_id}")
+async def get_session_history_endpoint(
+    session_id: str,
+    visible_only: bool = Query(True, description="Show only visible records")
+):
+    """Get all history records for a specific session."""
+    logger = logging.getLogger("get_session_history")
+    logger.setLevel(logging.INFO)
+    
+    try:
+        histories = get_session_history(session_id, visible_only)
+        logger.info(f"Found {len(histories)} history records for session {session_id}")
+        return {
+            "status": "success",
+            "session_id": session_id,
+            "count": len(histories),
+            "histories": histories
+        }
+    except Exception as e:
+        logger.error(f"Error retrieving session history: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve session history")
+
+@app.get("/history/{history_id}")
+async def get_history_record(history_id: str):
+    """Get a specific history record by ID."""
+    logger = logging.getLogger("get_history_record")
+    logger.setLevel(logging.INFO)
+    
+    try:
+        history_record = get_history_by_id(history_id)
+        if not history_record:
+            raise HTTPException(status_code=404, detail="History record not found")
+        
+        logger.info(f"Retrieved history record: {history_id}")
+        return {
+            "status": "success",
+            "history": history_record
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving history record: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve history record")
+
+@app.put("/history/{history_id}/visibility")
+async def toggle_history_visibility(
+    history_id: str,
+    visible: bool = Form(...)
+):
+    """Toggle the visibility of a history record."""
+    logger = logging.getLogger("toggle_history_visibility")
+    logger.setLevel(logging.INFO)
+    
+    try:
+        history_record = get_history_by_id(history_id)
+        if not history_record:
+            raise HTTPException(status_code=404, detail="History record not found")
+        
+        history_record.visible = visible
+        logger.info(f"Updated visibility for history record {history_id} to {visible}")
+        return {
+            "status": "success",
+            "history_id": history_id,
+            "visible": visible,
+            "message": "History visibility updated successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating history visibility: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update history visibility")
+
+@app.get("/history")
+async def get_all_history(
+    visible_only: bool = Query(True, description="Show only visible records"),
+    limit: int = Query(100, description="Maximum number of records to return")
+):
+    """Get all history records (with optional filtering)."""
+    logger = logging.getLogger("get_all_history")
+    logger.setLevel(logging.INFO)
+    
+    try:
+        histories = app.state.history if app.state.history else []
+        if visible_only:
+            histories = [h for h in histories if h.visible]
+        
+        # Apply limit
+        histories = histories[:limit]
+        
+        logger.info(f"Retrieved {len(histories)} history records")
+        return {
+            "status": "success",
+            "count": len(histories),
+            "histories": histories
+        }
+    except Exception as e:
+        logger.error(f"Error retrieving all history: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve history records")
+
+
+@app.post("/history/{history_id}/transcription/{transcription_index}/analysis")
+async def add_analysis_to_transcription(
+    history_id: str,
+    transcription_index: int,
+    analysis_text: str = Form(...)
+):
+    """Add analysis results to a specific transcription in a history record."""
+    logger = logging.getLogger("add_analysis_to_transcription")
+    logger.setLevel(logging.INFO)
+    
+    try:
+        history_record = get_history_by_id(history_id)
+        if not history_record:
+            raise HTTPException(status_code=404, detail="History record not found")
+        
+        if transcription_index >= len(history_record.transcriptions) or transcription_index < 0:
+            raise HTTPException(status_code=400, detail="Invalid transcription index")
+        
+        history_record.transcriptions[transcription_index].analysis = analysis_text
+        logger.info(f"Added analysis to transcription {transcription_index} in history {history_id}")
+        
+        return {
+            "status": "success",
+            "history_id": history_id,
+            "transcription_index": transcription_index,
+            "message": "Analysis added successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding analysis to transcription: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to add analysis to transcription")
+
+@app.get("/history/{history_id}/transcriptions")
+async def get_transcriptions_from_history(history_id: str):
+    """Get all transcriptions from a specific history record."""
+    logger = logging.getLogger("get_transcriptions_from_history")
+    logger.setLevel(logging.INFO)
+    
+    try:
+        history_record = get_history_by_id(history_id)
+        if not history_record:
+            raise HTTPException(status_code=404, detail="History record not found")
+        
+        logger.info(f"Retrieved {len(history_record.transcriptions)} transcriptions from history {history_id}")
+        return {
+            "status": "success",
+            "history_id": history_id,
+            "count": len(history_record.transcriptions),
+            "transcriptions": history_record.transcriptions
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving transcriptions from history: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve transcriptions from history")

@@ -42,6 +42,7 @@ const data = {
       isActive: true,
       items: [
         { title: "Transcriber", url: "/" },
+        { title: "History", url: "/history" },
         
       ],
     },
