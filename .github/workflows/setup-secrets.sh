@@ -65,6 +65,7 @@ REQUIRED_VARS=(
     AZURE_OPENAI_DEPLOYMENT_NAME_TRANSCRIBE
     AZURE_STORAGE_ACCOUNT_NAME
     AZURE_STORAGE_ACCOUNT_KEY
+    SERVICE_BACKEND_URI
 )
 
 for VAR in "${REQUIRED_VARS[@]}"; do
@@ -169,6 +170,21 @@ echo "  ✓ AZURE_STORAGE_ACCOUNT_NAME"
 
 gh secret set AZURE_STORAGE_ACCOUNT_KEY --body "$AZURE_STORAGE_ACCOUNT_KEY"
 echo "  ✓ AZURE_STORAGE_ACCOUNT_KEY"
+
+gh secret set SERVICE_BACKEND_URI --body "$SERVICE_BACKEND_URI"
+echo "  ✓ SERVICE_BACKEND_URI"
+
+# Get Azure Static Web Apps deployment token
+echo "🔑 Retrieving Azure Static Web Apps deployment token..."
+STATIC_WEB_APP_NAME=$(az staticwebapp list -g $AZURE_RESOURCE_GROUP --query "[0].name" -o tsv)
+if [ -n "$STATIC_WEB_APP_NAME" ]; then
+  AZURE_STATIC_WEB_APPS_API_TOKEN=$(az staticwebapp secrets list -n $STATIC_WEB_APP_NAME -g $AZURE_RESOURCE_GROUP --query "properties.apiKey" -o tsv)
+  gh secret set AZURE_STATIC_WEB_APPS_API_TOKEN --body "$AZURE_STATIC_WEB_APPS_API_TOKEN"
+  echo "  ✓ AZURE_STATIC_WEB_APPS_API_TOKEN"
+else
+  echo "  ⚠️  Static Web App not found. Please set AZURE_STATIC_WEB_APPS_API_TOKEN manually."
+  echo "     Get it from: Azure Portal → Static Web App → Manage deployment token"
+fi
 
 echo ""
 echo "✅ All GitHub secrets have been created successfully!"
