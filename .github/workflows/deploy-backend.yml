@@ -64,20 +64,13 @@ jobs:
                 AZURE_SPEECH_ENDPOINT=${{ secrets.AZURE_SPEECH_ENDPOINT }} \
                 AZURE_SPEECH_REGION=${{ secrets.AZURE_SPEECH_REGION }} \
                 AZURE_OPENAI_DEPLOYMENT_NAME=${{ secrets.MODEL_NAME }} \
-                AZURE_SPEECH_KEY=secretref:azure-speech-key \
+                AZURE_SPEECH_KEY=${{ secrets.AZURE_SPEECH_KEY }} \
                 MODEL_NAME=${{ secrets.MODEL_NAME }} \
                 AZURE_OPENAI_ENDPOINT_TRANSCRIBE=${{ secrets.AZURE_OPENAI_ENDPOINT_TRANSCRIBE }} \
                 AZURE_OPENAI_DEPLOYMENT_NAME_TRANSCRIBE=${{ secrets.AZURE_OPENAI_DEPLOYMENT_NAME_TRANSCRIBE }} \
                 AZURE_STORAGE_ACCOUNT_NAME=${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }} \
-                AZURE_STORAGE_ACCOUNT_KEY=secretref:azure-storage-account-key
+                AZURE_STORAGE_ACCOUNT_KEY=${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
             
-            # Update secrets separately
-            az containerapp secret set \
-              --name ${{ env.CONTAINER_APP_NAME }} \
-              --resource-group ${{ env.RESOURCE_GROUP }} \
-              --secrets \
-                azure-speech-key=${{ secrets.AZURE_SPEECH_KEY }} \
-                azure-storage-account-key=${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
 
       - name: Logout from Azure
         if: always()
