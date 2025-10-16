@@ -742,7 +742,7 @@ export default function App() {
                             <SelectValue placeholder="Select model" />
                           </SelectTrigger>
                           <SelectContent>
-                            {/* <SelectItem value="msft">Microsoft</SelectItem> */}
+                            <SelectItem value="msft">Microsoft</SelectItem>
                             <SelectItem value="llm">LLM</SelectItem>
                             <SelectItem value="whisper">Whisper</SelectItem>
                           </SelectContent>

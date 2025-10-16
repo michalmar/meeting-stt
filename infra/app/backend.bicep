@@ -403,13 +403,15 @@ resource openaiTranscribeDeployment 'Microsoft.CognitiveServices/accounts/deploy
   parent: openaiTranscribe
   sku: {
     name: 'GlobalStandard'
-    capacity: 250
+    capacity: 2500 // 2.5M tokens per minute
   }
   properties: {
     model: {
       format: 'OpenAI'
-      name: 'gpt-4o-audio-preview'
-      version: '2024-12-17'
+      // name: 'gpt-4o-audio-preview'
+      // version: '2024-12-17'
+      name: 'gpt-audio'
+      version: '2025-08-28'
       // name: 'gpt-4o-transcribe'
       // version: '2025-03-20'
 

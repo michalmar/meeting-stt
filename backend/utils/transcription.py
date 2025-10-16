@@ -527,9 +527,35 @@ class TranscriptionFactory:
                 json_str = match.group(1)
             else:
                 json_str = transcription_text
+            
+            # Clean up the JSON string to handle malformed responses
+            json_str = json_str.strip()
+            
+            # Fix missing opening bracket - check if it starts with { but should be an array
+            if json_str.startswith('{') and json_str.endswith(']'):
+                logger.warning("Detected malformed JSON: missing opening bracket. Attempting to fix.")
+                json_str = '[' + json_str
+            
+            # Fix missing closing bracket - check if it starts with [ but doesn't end with ]
+            if json_str.startswith('[') and not json_str.endswith(']'):
+                logger.warning("Detected malformed JSON: missing closing bracket. Attempting to fix.")
+                json_str = json_str + ']'
+            
+            # Fix missing both brackets - check if starts with { and ends with }
+            if json_str.startswith('{') and json_str.endswith('}') and '},{' not in json_str:
+                logger.warning("Detected single object instead of array. Wrapping in array.")
+                json_str = '[' + json_str + ']'
+            
             transcription_items = json.loads(json_str)
+            
+            # Ensure we have a list
+            if not isinstance(transcription_items, list):
+                logger.warning("Transcription result is not a list. Wrapping in array.")
+                transcription_items = [transcription_items]
+                
         except Exception as e:
             logger.error(f"Failed to parse LLM transcription as JSON: {e}")
+            logger.error(f"Problematic JSON string: {json_str[:500]}...")  # Log first 500 chars
             if callback:
                 callback({"event_type": "error", "error": str(e), "raw_content": transcription_text})
             return
